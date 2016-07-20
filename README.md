@@ -1,4 +1,4 @@
-Lab-Tech
+Labtech
 =====
 IRC chat bot for various (nefarious) purposes!
 
