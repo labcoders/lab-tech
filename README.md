@@ -1,9 +1,12 @@
 Labtech
 =====
+
 IRC chat bot for various (nefarious) purposes!
+
 
 Available commands
 -----
-- !list -> List all available files in data directory
-- !help -> Print usage
-- !upload <url> <filename> -> Download url and save as filename under data directory.
+
+- `!list` → lists all available files in data directory
+- `!help` → prints usage
+- `!upload <url> <filename>` → downloads url and save as filename under data directory
