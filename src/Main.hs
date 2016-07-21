@@ -34,17 +34,35 @@ data Command
     | List
     deriving (Show, Read)
 
-name :: Nick
-name = Nick "labtech"
+data ServerSpec
+  = ServerSpec
+    { serverNicks :: [Nick]
+    , serverHost :: String
+    , serverPort :: Int
+    , serverChannels :: [Channel]
+    , serverUsername :: Username
+    , serverRealName :: RealName
+    }
 
-ircServer :: String
-ircServer = "labcoders.club"
+labcodersSpec :: ServerSpec
+labcodersSpec = ServerSpec
+  { serverNicks = Nick <$> [ "labtech", "labtech_", "labtech__" ]
+  , serverUsername = Username "labtech"
+  , serverRealName = RealName "labtech"
+  , serverHost = "labcoders.club"
+  , serverPort = 6667
+  , serverChannels = Channel <$> [ "#general" ]
+  }
 
-ircPort :: Int
-ircPort = 6667
-
-generalChan :: Channel
-generalChan = Channel "#general"
+freenodeSpec :: ServerSpec
+freenodeSpec = ServerSpec
+  { serverNicks = Nick <$> [ "labtech", "labtech_", "labtech__" ]
+  , serverHost = "irc.freenode.net"
+  , serverUsername = Username "labtech"
+  , serverRealName = RealName "labtech"
+  , serverPort = 6667
+  , serverChannels = Channel <$> [ "#labcoders" ]
+  }
 
 path :: FilePath
 path = "data"
@@ -60,67 +78,6 @@ write :: Handle -> String -> String -> IO ()
 write h a b = do
     hPrintf h "%s %s\r\n" a b
     printf "> %s %s\n" a b
-
-privmsg :: Handle -> Channel -> String -> IO ()
-privmsg h (Channel c) s = hPrintf h "PRIVMSG %s %s\r\n" c s
-
-clean :: String -> String
-clean = drop 1 . dropWhile (/= ':')
-
-handle :: Handle -> String -> IO ()
-handle h [] = return ()
-handle h s =
-    let cleaned = clean s in
-        case cleaned of
-            [] -> return ()
-            _ -> if head cleaned == '!' then do
-                    print $ "Command: " ++ cleaned
-                    let args = words $ tail cleaned in do
-                        if length args == 0 then return ()
-                        else case readMaybe $ toCamel (head args) of
-                            Just a -> run h a $ tail args
-                            Nothing -> print $ "Failed to parse command: " ++ head args
-                 else print cleaned
-
-run :: Handle -> Command -> [String] -> IO ()
-run h com args = case com of
-    Upload -> do
-        print "Upload called."
-        if length args /= 2 then privmsg h generalChan $ "Incorrect number of arguments to upload."
-        else do
-            printCommand com args
-            let url = args !! 0
-                filename = args !! 1
-            print $ "Downloading '" ++ url ++ "' and saving to data/" ++ filename
-            response <- simpleHTTP $ getRequest url
-            case response of
-                Left e -> privmsg h generalChan $ "Failed to save " ++ filename ++ " to disk."
-                Right b -> do
-                    print $ "Response code: " ++ (show $ rspCode b)
-                    print $ "Response reason: " ++ (show $ rspReason b)
-                    print "Response headers: "
-                    mapM (print . show) $ rspHeaders b
-                    exists <- doesDirectoryExist path
-                    if exists then createDirectory path
-                    else return ()
-                    B.writeFile (path </> filename) $ C.pack $ rspBody b
-                    privmsg h generalChan ("Successfully saved " ++ filename)
-    Help -> print "Help called." >> mapM (privmsg h generalChan) help >> return ()
-    List -> do
-        print "List called."
-        contents <- listDirectory path -- handle errors
-        mapM (privmsg h generalChan) contents
-        return ()
-
-printCommand :: Command -> [String] -> IO ()
-printCommand com args = do
-    print $ show com ++ " called with:\n"
-    mapM print args
-    return ()
-
-toCamel :: String -> String
-toCamel [] = []
-toCamel (x:xs) = (toUpper x) : map toLower xs
 
 newtype Nick = Nick { unNick :: String }
 newtype Username = Username { unUsername :: String }
@@ -142,8 +99,8 @@ data IrcEnv
     , _privmsgE :: MessageTarget -> String -> IO ()
     }
 
-makeIrcEnv :: Handle -> IrcEnv
-makeIrcEnv h = IrcEnv
+makeIrcEnv :: Handle -> ServerSpec -> IrcEnv
+makeIrcEnv h spec = IrcEnv
   { _nickE = write h "NICK" . unNick
   , _joinE = write h "JOIN" . unChannel
   , _pongE = write h "PONG" . (':' :) . unPing
@@ -159,7 +116,7 @@ makeIrcEnv h = IrcEnv
       liftIO $ putStrLn $ "< " ++ line
       case parseMessage line of
         Left err -> do
-          putStrLn $ "parse error: " ++ err
+          -- putStrLn $ "parse error: " ++ err
           _next
         Right x -> pure x
 
@@ -261,20 +218,23 @@ type Url = String
 -- | Concrete 'IO'-based interpreter for Labtech commands.
 data LabEnv
   = LabEnv
-    { _listE :: forall t n. MonadIrcIO t n => t n FileListing
-    , _uploadE :: forall t n. MonadIrcIO t n => Url -> FilePath -> t n ()
-    , _helpE :: forall t n. MonadIrcIO t n => t n ()
+    { _listE
+        :: forall t n. MonadIrcIO t n => MessageTarget -> t n FileListing
+    , _uploadE
+        :: forall t n. MonadIrcIO t n => Url -> FilePath -> MessageTarget -> t n ()
+    , _helpE
+        :: forall t n. MonadIrcIO t n => MessageTarget -> t n ()
     }
 
 class MonadLab m where
-  labList :: m ()
-  labUpload :: Url -> FilePath -> m ()
-  labHelp :: m ()
+  labList :: MessageTarget -> m ()
+  labUpload :: Url -> FilePath -> MessageTarget -> m ()
+  labHelp :: MessageTarget -> m ()
 
 makeLabEnv :: LabEnv
 makeLabEnv = LabEnv
-  { _helpE = forM_ help $ \line -> do
-      ircPrivmsg (ChannelTarget generalChan) line
+  { _helpE = \target -> forM_ help $ \line -> do
+      ircPrivmsg target line
   , _listE = error "List unsupported."
   , _uploadE = error "Upload unsupported."
   }
@@ -288,7 +248,9 @@ instance MonadIO m => MonadIRC (ReaderT (IrcEnv, LabEnv) m) where
   ircPrivmsg = withReaderT fst .% ircPrivmsg where (.%) = (.) . (.)
 
 instance MonadIO m => MonadLab (ReaderT (IrcEnv, LabEnv) m) where
-  labHelp = asks (_helpE . snd) >>= withReaderT fst
+  labHelp target = do
+    f <- asks (_helpE . snd)
+    f target
   labUpload = error "unimplemented: upload"
   labList = error "unimplemented: list"
 
@@ -298,16 +260,24 @@ runLabtech :: IrcEnv -> LabEnv -> Labtech a -> IO a
 runLabtech irc lab m = runReaderT m (irc, lab)
 
 main = do
-    h <- connectTo ircServer (PortNumber (fromIntegral ircPort))
-    hSetBuffering h NoBuffering
-    runLabtech (makeIrcEnv h) makeLabEnv $ do
+  mapM_ (forkIO . runOnServer) [ labcodersSpec, freenodeSpec ]
+  putStrLn "press return to quit"
+  getLine
+
+runOnServer :: ServerSpec -> IO ()
+runOnServer spec = do
+  h <- connectTo (serverHost spec) (PortNumber (fromIntegral $ serverPort spec))
+  hSetBuffering h NoBuffering
+  runLabtech (makeIrcEnv h) makeLabEnv $ do
       liftIO $ threadDelay 3000000
-      ircUser (Username $ unNick name) (RealName $ unNick name)
+      ircUser (serverUsername spec) (serverRealName spec)
       liftIO $ threadDelay 3000000
-      ircNick name
+      ircNick (head $ serverNicks spec)
       handleMessage =<< ircNext
       liftIO $ threadDelay 3000000
-      ircJoin generalChan
+      forM_ (serverChannels spec) $ \chan -> do
+        ircJoin chan
+        liftIO $ threadDelay 1000000
       mainLoop
 
 type CommandResponse = [String]
@@ -321,6 +291,4 @@ handleMessage message = case message of
     liftIO $ putStrLn $ concat
       [ unNick . originNick $ origin, " (", renderTarget target, ") :", body ]
   Pingmsg ping -> do
-    liftIO $ putStrLn "got ping"
     ircPong ping
-    liftIO $ putStrLn "sent pong"
