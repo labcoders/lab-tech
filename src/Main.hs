@@ -139,7 +139,7 @@ data IrcEnv
     , _joinE :: Channel -> IO ()
     , _pongE :: Ping -> IO ()
     , _nextE :: IO Message
-    , _privmsgE :: Either Channel Nick -> String -> IO ()
+    , _privmsgE :: MessageTarget -> String -> IO ()
     }
 
 makeIrcEnv :: Handle -> IrcEnv
@@ -156,6 +156,7 @@ makeIrcEnv h = IrcEnv
 
     _next = do
       line <- hGetLine h
+      liftIO $ putStrLn $ "< " ++ line
       case parseMessage line of
         Left err -> do
           putStrLn $ "parse error: " ++ err
@@ -163,41 +164,66 @@ makeIrcEnv h = IrcEnv
         Right x -> pure x
 
     _msg target msg = do
-      write h "PRIVMSG" $ either unChannel unNick target ++ " :" ++ msg
+      write h "PRIVMSG" $ renderTarget target ++ " :" ++ msg
 
-type MessageTarget = Either Channel Nick
+data MessageTarget
+  = ChannelTarget Channel
+  | NickTarget Nick
+
+targetToEither :: MessageTarget -> Either Channel Nick
+targetToEither m = case m of
+  ChannelTarget x -> Left x
+  NickTarget x -> Right x
+
+renderTarget :: MessageTarget -> String
+renderTarget = either unChannel unNick . targetToEither
+
+data MessageOrigin
+  = MessageOrigin
+    { originNick :: Nick
+    , originHost :: String
+    }
 
 data Message
-  = Privmsg MessageTarget String
-  | Pingmsg String
+  = Privmsg MessageOrigin MessageTarget String
+  | Pingmsg Ping
 
 parseMessage :: String -> Either String Message
-parseMessage = first show . runParser messageParser "irc" where
+parseMessage = first parseErrorPretty . runParser messageParser "irc" where
   messageParser :: Parser Message
   messageParser = privmsg <|> ping
 
   privmsg :: Parser Message
   privmsg = do
-    try $ string' "privmsg"
+    origin <- try $ msgorigin <* many spaceChar <* string' "privmsg"
     skipMany spaceChar
     target <- msgtarget
-    string " :"
+    many spaceChar
+    string ":"
     msg <- anyChar `manyTill` eof
-    pure $ Privmsg target msg
+    pure $ Privmsg origin target msg
 
   ping :: Parser Message
   ping = do
     try $ string' "ping"
     skipMany spaceChar
+    string ":"
     msg <- anyChar `manyTill` eof
-    pure $ Pingmsg msg
+    pure $ Pingmsg (Ping msg)
 
-  msgtarget :: Parser (Either Channel Nick)
-  msgtarget = (Left <$> channel) <|> (Right <$> nick) where
+  msgtarget :: Parser MessageTarget
+  msgtarget = (ChannelTarget <$> channel) <|> (NickTarget <$> nick) where
     channel
       = fmap Channel $ (++) <$> try (string "#") <*> (anyChar `someTill` spaceChar)
     nick
       = fmap Nick $ (anyChar `someTill` spaceChar)
+
+  msgorigin :: Parser MessageOrigin
+  msgorigin = do
+    string ":"
+    nick <- anyChar `someTill` string "!"
+    host <- anyChar `someTill` spaceChar
+    pure $ MessageOrigin (Nick nick) host
 
 class MonadIRC m where
   ircNick :: Nick -> m ()
@@ -248,7 +274,7 @@ class MonadLab m where
 makeLabEnv :: LabEnv
 makeLabEnv = LabEnv
   { _helpE = forM_ help $ \line -> do
-      ircPrivmsg (Left generalChan) line
+      ircPrivmsg (ChannelTarget generalChan) line
   , _listE = error "List unsupported."
   , _uploadE = error "Upload unsupported."
   }
@@ -275,14 +301,26 @@ main = do
     h <- connectTo ircServer (PortNumber (fromIntegral ircPort))
     hSetBuffering h NoBuffering
     runLabtech (makeIrcEnv h) makeLabEnv $ do
-      ircNick name
-      liftIO $ threadDelay 1000
+      liftIO $ threadDelay 3000000
       ircUser (Username $ unNick name) (RealName $ unNick name)
-      liftIO $ threadDelay 1000
+      liftIO $ threadDelay 3000000
+      ircNick name
+      handleMessage =<< ircNext
+      liftIO $ threadDelay 3000000
       ircJoin generalChan
       mainLoop
 
-mainLoop :: Labtech a
-mainLoop = forever $ do
-  undefined
+type CommandResponse = [String]
 
+mainLoop :: Labtech a
+mainLoop = forever $ handleMessage =<< ircNext
+
+handleMessage :: Message -> Labtech ()
+handleMessage message = case message of
+  Privmsg origin target body -> do
+    liftIO $ putStrLn $ concat
+      [ unNick . originNick $ origin, " (", renderTarget target, ") :", body ]
+  Pingmsg ping -> do
+    liftIO $ putStrLn "got ping"
+    ircPong ping
+    liftIO $ putStrLn "sent pong"
