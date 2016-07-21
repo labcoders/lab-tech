@@ -19,6 +19,8 @@ import qualified Data.Text as T
 
 import Network
 import Network.HTTP
+import Network.Wai.Application.Static
+import Network.Wai.Handler.Warp (run)
 
 import System.FilePath.Posix
 import System.IO
@@ -33,6 +35,7 @@ data Command
     = Upload Url FilePath
     | Help
     | List
+    | Get
     deriving (Show, Read)
 
 data ServerSpec
@@ -80,6 +83,7 @@ write h a b = do
     hPrintf h "%s %s\r\n" a b
     printf "> %s %s\n" a b
 
+<<<<<<< Updated upstream
 newtype Nick = Nick { unNick :: String }
 newtype Username = Username { unUsername :: String }
 newtype RealName = RealName { unRealName :: String }
