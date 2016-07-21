@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes #-}
@@ -29,7 +30,7 @@ import Text.Read
 import Text.Printf
 
 data Command
-    = Upload
+    = Upload Url FilePath
     | Help
     | List
     deriving (Show, Read)
@@ -181,6 +182,18 @@ parseMessage = first parseErrorPretty . runParser messageParser "irc" where
     nick <- anyChar `someTill` string "!"
     host <- anyChar `someTill` spaceChar
     pure $ MessageOrigin (Nick nick) host
+
+data CommandEnv command
+  = CommandEnv
+    { commandSender :: Nick
+    , commandBody :: command
+    , commandChannel :: MessageTarget
+    }
+  deriving (Functor)
+
+parseCommand :: ServerSpec -> String -> Either String Command
+parseCommand spec = first parseErrorPretty . runParser commandParser name where
+  name = "irc:" ++ server
 
 class MonadIRC m where
   ircNick :: Nick -> m ()
