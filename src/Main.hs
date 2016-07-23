@@ -3,10 +3,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main where
 
 import Control.Concurrent
+import Control.Concurrent.Chan
 import Control.Monad
 import Control.Monad.Reader
 
@@ -27,8 +29,9 @@ import System.IO
 import System.Directory
 
 import Text.Megaparsec
+import Text.Megaparsec.Char
 import Text.Megaparsec.String
-import Text.Read
+-- import Text.Read
 import Text.Printf
 
 data Command
@@ -36,6 +39,7 @@ data Command
     | Help
     | List
     | Get
+    | Say String
     deriving (Show, Read)
 
 data ServerSpec
@@ -104,15 +108,26 @@ data IrcEnv
     , _privmsgE :: MessageTarget -> String -> IO ()
     }
 
-makeIrcEnv :: Handle -> ServerSpec -> IrcEnv
-makeIrcEnv h spec = IrcEnv
-  { _nickE = write h "NICK" . unNick
-  , _joinE = write h "JOIN" . unChannel
-  , _pongE = write h "PONG" . (':' :) . unPing
-  , _nextE = _next
-  , _userE = _user
-  , _privmsgE = _msg
-  } where
+makeIrcEnv :: Handle -> ServerSpec -> IO IrcEnv
+makeIrcEnv h spec = do
+  mh <- newMVar h
+  let withH = _withH mh
+  pure IrcEnv
+    { _nickE = \(Nick nick) -> withH $ \h -> write h "NICK" nick
+    , _joinE = \(Channel chan) -> withH $ \h -> write h "JOIN" chan
+    , _pongE = \(Ping ping) -> withH $ \h -> write h "PONG" $ ':':ping
+    , _nextE = _next
+    , _userE = _user
+    , _privmsgE = _msg
+    }
+  where
+    _withH :: (MonadIO m, Monad m) => MVar Handle -> (Handle -> m a) -> m a
+    _withH mh m = do
+      h <- liftIO $ takeMVar mh
+      x <- m h
+      liftIO $ putMVar mh h
+      pure x
+
     _user (Username username) (RealName realname)
       = write h "USER" $ username ++ " 0 * :" ++ realname
 
@@ -191,13 +206,47 @@ data CommandEnv command
   = CommandEnv
     { commandSender :: Nick
     , commandBody :: command
-    , commandChannel :: MessageTarget
+    , commandTarget :: MessageTarget
+    , commandServerSpec :: ServerSpec
     }
   deriving (Functor)
 
-parseCommand :: ServerSpec -> String -> Either String Command
-parseCommand spec = first parseErrorPretty . runParser commandParser name where
-  name = "irc:" ++ server
+parseCommand :: CommandEnv String -> Either String Command
+parseCommand env
+  = first parseErrorPretty $ runParser commandParser name $ commandBody env where
+
+    commandName :: String -> Parser ()
+    commandName name
+      = void $ try (string name <* notFollowedBy (choice [alphaNumChar, symbolChar]))
+
+    name = "irc:" ++ (serverHost . commandServerSpec) env ++ targetName
+    targetName = renderTarget (commandTarget env)
+
+    commandParser :: Parser Command
+    commandParser = do
+      try (string "!") <?> "bang"
+      choice [uploadCommand, helpCommand, listCommand, sayCommand]
+
+    sayCommand :: Parser Command
+    sayCommand = do
+      commandName "say"
+      skipSome spaceChar
+      Say <$> anyChar `manyTill` eof
+
+    uploadCommand :: Parser Command
+    uploadCommand = do
+      commandName "upload"
+      skipSome spaceChar
+      url <- anyChar `someTill` spaceChar
+      skipMany spaceChar
+      path <- anyChar `someTill` eof
+      pure $ Upload url path
+
+    helpCommand :: Parser Command
+    helpCommand = commandName "help" *> pure Help
+
+    listCommand :: Parser Command
+    listCommand = commandName "list" *> pure List
 
 class MonadIRC m where
   ircNick :: Nick -> m ()
@@ -276,6 +325,15 @@ type Labtech = ReaderT (IrcEnv, LabEnv) IO
 runLabtech :: IrcEnv -> LabEnv -> Labtech a -> IO a
 runLabtech irc lab m = runReaderT m (irc, lab)
 
+-- | A pair of channels for bidirectional communication.
+data Bichan i o
+  = Bichan
+    { readSide :: !(Chan i)
+    , writeSide :: !(Chan o)
+    }
+
+type Bichan' a = Bichan a a
+
 main = do
   mapM_ (forkIO . runOnServer) [ labcodersSpec, freenodeSpec ]
   putStrLn "press return to quit"
@@ -285,27 +343,48 @@ runOnServer :: ServerSpec -> IO ()
 runOnServer spec = do
   h <- connectTo (serverHost spec) (PortNumber (fromIntegral $ serverPort spec))
   hSetBuffering h NoBuffering
-  runLabtech (makeIrcEnv h) makeLabEnv $ do
+  ircEnv <- makeIrcEnv h spec
+  runLabtech ircEnv makeLabEnv $ do
+      -- do the IRC login and begin the main loop
       liftIO $ threadDelay 3000000
       ircUser (serverUsername spec) (serverRealName spec)
       liftIO $ threadDelay 3000000
       ircNick (head $ serverNicks spec)
-      handleMessage =<< ircNext
+      handleMessage spec =<< ircNext
       liftIO $ threadDelay 3000000
       forM_ (serverChannels spec) $ \chan -> do
         ircJoin chan
         liftIO $ threadDelay 1000000
-      mainLoop
+      mainLoop spec
 
 type CommandResponse = [String]
 
-mainLoop :: Labtech a
-mainLoop = forever $ handleMessage =<< ircNext
+mainLoop :: ServerSpec -> Labtech a
+mainLoop spec = forever $ handleMessage spec =<< ircNext
 
-handleMessage :: Message -> Labtech ()
-handleMessage message = case message of
-  Privmsg origin target body -> do
+handleMessage :: ServerSpec -> Message -> Labtech ()
+handleMessage spec message = case message of
+  Pingmsg ping -> ircPong ping
+  Privmsg origin target (init -> body) -> do
     liftIO $ putStrLn $ concat
       [ unNick . originNick $ origin, " (", renderTarget target, ") :", body ]
-  Pingmsg ping -> do
-    ircPong ping
+
+    when ("!" `isPrefixOf` body) $ do
+      let env = CommandEnv
+            { commandSender = originNick origin
+            , commandBody = body
+            , commandServerSpec = spec
+            , commandTarget = target
+            }
+      case parseCommand env of
+        Left error -> mapM_ (ircPrivmsg target) (lines error)
+        Right command -> handleCommand env { commandBody = command }
+
+handleCommand :: CommandEnv Command -> Labtech ()
+handleCommand env@(CommandEnv
+  { commandBody = command
+  , commandTarget = target
+  }) = case command of
+    Help -> mapM_ (ircPrivmsg target) help
+    Say str -> ircPrivmsg target str
+    _ -> ircPrivmsg target $ "unimplemented command: " ++ show command
