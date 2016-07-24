@@ -40,18 +40,13 @@ formatEntry (UploadEntry
                = title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
 
 uploadSelectStr :: Query
-uploadSelectStr = "select " ++
-                  "(url, title, filepath, uploadtime, nick) " ++
-                  "from uploads"
+uploadSelectStr = "select (url, title, filepath, uploadtime, nick) from uploads"
 
 uploadInsertStr :: Query
-uploadInsertStr = "insert into " ++
-            "(url, title, filepath, nick) values ?, ?, ?, ?"
+uploadInsertStr = "insert into (url, title, filepath, nick) values ?, ?, ?, ?"
 
 containsStr :: Query
-containsStr = "select " ++
-            "(url, title, filepath, uploadtime, nick) " ++
-            "from uploads where ? = ?"
+containsStr = "select (url, title, filepath, uploadtime, nick) from uploads where ? = ?"
 
 -- We have really bad UIDs because i'm quite tired.
 saveLink :: Url -> Title -> IO (Maybe FilePath)
