@@ -69,7 +69,7 @@ dbContains s = do
     conn <- connect labtechConnInfo
     urls <- query conn containsStr (toField ("url" :: String), toField s) :: IO [UploadEntry]
     tits <- query conn containsStr (toField ("title" :: String), toField s) :: IO [UploadEntry]
-    return (length urls == 0 && length tits == 0)
+    return (length urls /= 0 || length tits /= 0)
 
 getUniqueName :: IO String
 getUniqueName = do
