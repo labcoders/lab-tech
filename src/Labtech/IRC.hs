@@ -33,7 +33,7 @@ makeIrcEnv handle _ = do
     , _privmsgE = _msg
     }
   where
-    _withH :: (MonadIO m, Monad m) => MVar Handle -> (Handle -> m a) -> m a
+    _withH :: (MonadIO m) => MVar Handle -> (Handle -> m a) -> m a
     _withH mh m = do
       h <- liftIO $ takeMVar mh
       x <- m h

@@ -15,6 +15,7 @@ import Control.Monad.Reader
 type MonadIrcIO t n = (MonadTrans t, Monad n, Monad (t n), MonadIO n, MonadIRC (t n))
 
 type Url = String
+type Title = String
 
 type FileListing = [String]
 
