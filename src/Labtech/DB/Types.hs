@@ -18,8 +18,8 @@ data UploadEntry
 
 instance FromRow UploadEntry where
     fromRow  = UploadEntry
-           <$> (T.unpack <$> field)
-           <*> (T.unpack <$> field)
-           <*> (T.unpack <$> field)
+           <$> field
+           <*> field
+           <*> field
            <*> field
            <*> (Nick <$> field)

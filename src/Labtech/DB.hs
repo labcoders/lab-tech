@@ -13,6 +13,8 @@ import Database.PostgreSQL.Simple.ToField
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 
+import qualified Data.Text as T
+
 import Labtech.Types
 import Labtech.DB.Types
 import Labtech.IRC.Types
@@ -40,13 +42,13 @@ formatEntry (UploadEntry
                = title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
 
 uploadSelectStr :: Query
-uploadSelectStr = "select (url, title, filepath, uploadtime, nick) from uploads"
+uploadSelectStr = "select url, title, filepath, uploadtime, nick from uploads"
 
 uploadInsertStr :: Query
-uploadInsertStr = "insert into (url, title, filepath, nick) values ?, ?, ?, ?"
+uploadInsertStr = "insert into uploads (url, title, filepath, uploadtime, nick) values (?, ?, ?, DEFAULT, ?)"
 
 containsStr :: Query
-containsStr = "select (url, title, filepath, uploadtime, nick) from uploads where ? = ?"
+containsStr = "select url, title, filepath, uploadtime, nick from uploads where ? = ?"
 
 -- We have really bad UIDs because i'm quite tired.
 saveLink :: Url -> Title -> IO (Maybe FilePath)
@@ -74,12 +76,16 @@ getUniqueName = do
     else return uid
 
 queryUploads :: IO [UploadEntry]
-queryUploads = flip query_ uploadSelectStr =<< connect labtechConnInfo -- catch errors
+queryUploads = do
+    conn <- connect labtechConnInfo
+    print =<< formatQuery conn uploadSelectStr ()
+    query_ conn uploadSelectStr
 
 insertUpload :: Url -> Title -> FilePath -> Nick -> IO String
 insertUpload url tit fp nick = do
     conn <- connect labtechConnInfo
-    r <- (try $ execute conn uploadInsertStr (url, tit, fp, unNick nick)) :: IO (Either SqlError Int64)
+    print =<< formatQuery conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)
+    r <- (try $ execute conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)) :: IO (Either SqlError Int64)
     case r of
         Left ex -> return $ "Failed to upload \"" ++ 
                             tit ++ "\" (" ++ url ++ ") from " ++ 
