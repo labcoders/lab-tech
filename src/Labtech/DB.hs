@@ -25,7 +25,7 @@ import System.Directory
 import System.FilePath.Posix
 
 uploadFilePath :: FilePath
-uploadFilePath = "/home/labtech/data"
+uploadFilePath = "data"
 
 labtechConnInfo :: ConnectInfo
 labtechConnInfo = defaultConnectInfo
