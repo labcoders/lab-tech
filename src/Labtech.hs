@@ -77,8 +77,7 @@ handleMessage chan spec message = case message of
     liftIO $ putStrLn $ concat
       [ unNick . originNick $ origin, " (", renderTarget target, ") :", body ]
 
-    if ("!" `isPrefixOf` body)
-    then do
+    when ("!" `isPrefixOf` body) $ do
       let env = CommandEnv
             { commandSender = originNick origin
             , commandBody = body
@@ -88,8 +87,8 @@ handleMessage chan spec message = case message of
       case parseCommand env of
         Left err -> mapM_ (ircPrivmsg target) (lines err)
         Right command -> handleCommand env { commandBody = command }
-    else do
-      liftIO $ replicateMessage spec origin target chan body
+
+    liftIO $ replicateMessage spec origin target chan body
 
 replicateMessage
   :: ServerSpec
