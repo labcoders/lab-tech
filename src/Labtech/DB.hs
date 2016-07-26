@@ -47,8 +47,14 @@ uploadSelectStr = "select url, title, filepath, uploadtime, nick from uploads"
 uploadInsertStr :: Query
 uploadInsertStr = "insert into uploads (url, title, filepath, uploadtime, nick) values (?, ?, ?, DEFAULT, ?)"
 
-containsStr :: Query
-containsStr = "select url, title, filepath, uploadtime, nick from uploads where ? = ?"
+uploadContainsStr :: Query
+uploadContainsStr = "select url, title, filepath, uploadtime, nick from uploads where ? = ?"
+
+ideaContainsStr :: Query
+ideaContainsStr = "select idea from ideas where idea = ?"
+
+ideaInsertStr :: Query
+ideaInsertStr = "insert into ideas (idea) values (?)"
 
 -- We have really bad UIDs because i'm quite tired.
 saveLink :: Url -> Title -> IO (Maybe FilePath)
@@ -61,22 +67,22 @@ saveLink url tit = do
             B.writeFile (uploadFilePath </> fn) $ C.pack $ rspBody rp
             return $ Just (uploadFilePath </> fn)
 
-insertIdea :: String -> IO (Maybe String)
-insertIdea id = do
+insertIdea :: String -> Nick-> IO String
+insertIdea id nick = do
     conn <- connect labtechConnInfo
-    r <- (try $ execute conn ideaInsertStr (tit :: String) :: IO (Either SqlError Int64)
+    r <- (try $ execute conn ideaInsertStr (Only id)) :: IO (Either SqlError Int64)
     case r of
-        Left ex -> return $ "Failed to upload idea\"" ++ 
-                            id ++ " from " ++ (unNick nick) ++ 
-                            ". Exception was: " ++ 
-                            (displayException ex)
-        Right i -> return $ "Successfully uploaded idea\"" ++ 
-                            id ++ " from " ++ (unNick nick)
+            Left ex -> return $ "Failed to upload idea\"" ++ 
+                                id ++ " from " ++ (unNick nick) ++ 
+                                ". Exception was: " ++ 
+                                (displayException ex)
+            Right i -> return $ "Successfully uploaded idea\"" ++ 
+                                id ++ " from " ++ (unNick nick)
 
 ideaTableContains :: String -> IO Bool
 ideaTableContains s = do
     conn <- connect labtechConnInfo
-    is <- query conn ideaContainsStr ("idea" :: String), toField s) :: IO [UploadEntry]
+    is <- query conn ideaContainsStr (Only s) :: IO [UploadEntry]
     return $ length is /= 0
 
 uploadTableContains :: String -> IO Bool

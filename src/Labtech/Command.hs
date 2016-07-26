@@ -82,7 +82,7 @@ handleCommand (CommandEnv
             ircPrivmsg target $ 
             "Idea:already exists in database."
         else do
-            res <- liftIO $ insertIdea i
+            res <- liftIO $ insertIdea i nick
             ircPrivmsg target res
     Upload url title -> do
         hasUrl <- liftIO $ uploadTableContains url
