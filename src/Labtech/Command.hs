@@ -14,10 +14,20 @@ import Data.Bifunctor ( first )
 import Text.Megaparsec
 import Text.Megaparsec.String
 
+data ListTarget
+  = ListUploads
+  | ListIdeas
+  deriving (Eq, Ord, Read, Show)
+
+renderListTarget :: ListTarget -> String
+renderListTarget t = case t of
+  ListUploads -> "uploads"
+  ListIdeas -> "ideas"
+
 data Command
     = Upload Url Title
     | Help
-    | List String
+    | List ListTarget
     | Get
     | Say String
     | Idea String
@@ -61,15 +71,18 @@ parseCommand env
       idea <- anyChar `someTill` eof
       pure $ Idea idea
 
+    listTarget :: Parser ListTarget
+    listTarget = choice
+      [ string "uploads" *> pure ListUploads
+      , string "ideas" *> pure ListIdeas
+      ]
+
     helpCommand :: Parser Command
     helpCommand = commandName "help" *> pure Help
 
     listCommand :: Parser Command
     listCommand = do
-      commandName "list"
-      skipSome spaceChar
-      s <- anyChar `someTill` eof
-      pure $ List s
+      commandName "list" *> skipSome spaceChar *> (List <$> listTarget) <* eof
 
 handleCommand :: CommandEnv Command -> Labtech ()
 handleCommand (CommandEnv
@@ -80,18 +93,21 @@ handleCommand (CommandEnv
     Help -> mapM_ (ircPrivmsg target) help
     Say str -> ircPrivmsg target str
     List s -> do
-	case map C.toLower s of
-	    "ideas" -> do
-		es <- liftIO listIdeas
-		mapM_ (ircPrivmsg target) es
-	    _ -> do
-		es <- liftIO queryUploads
-		mapM_ (ircPrivmsg target) $ map formatEntry es
+      f <- liftIO $ case s of
+            ListIdeas -> do
+              putStrLn "listing ideas"
+              listIdeas
+            ListUploads -> do
+              putStrLn "listing uploads"
+              map formatEntry <$> queryUploads
+      if null f
+      then ircPrivmsg target $ "No " ++ renderListTarget s
+      else mapM_ (ircPrivmsg target) f
 
     Idea i -> do
         hasIdea <- liftIO $ ideaTableContains i
         if hasIdea then
-            ircPrivmsg target $ 
+            ircPrivmsg target $
             "Idea:already exists in database."
         else do
             res <- liftIO $ insertIdea i nick
