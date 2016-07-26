@@ -61,11 +61,29 @@ saveLink url tit = do
             B.writeFile (uploadFilePath </> fn) $ C.pack $ rspBody rp
             return $ Just (uploadFilePath </> fn)
 
-dbContains :: String -> IO Bool
-dbContains s = do
+insertIdea :: String -> IO (Maybe String)
+insertIdea id = do
     conn <- connect labtechConnInfo
-    urls <- query conn containsStr (toField ("url" :: String), toField s) :: IO [UploadEntry]
-    tits <- query conn containsStr (toField ("title" :: String), toField s) :: IO [UploadEntry]
+    r <- (try $ execute conn ideaInsertStr (tit :: String) :: IO (Either SqlError Int64)
+    case r of
+        Left ex -> return $ "Failed to upload idea\"" ++ 
+                            id ++ " from " ++ (unNick nick) ++ 
+                            ". Exception was: " ++ 
+                            (displayException ex)
+        Right i -> return $ "Successfully uploaded idea\"" ++ 
+                            id ++ " from " ++ (unNick nick)
+
+ideaTableContains :: String -> IO Bool
+ideaTableContains s = do
+    conn <- connect labtechConnInfo
+    is <- query conn ideaContainsStr ("idea" :: String), toField s) :: IO [UploadEntry]
+    return $ length is /= 0
+
+uploadTableContains :: String -> IO Bool
+uploadTableContains s = do
+    conn <- connect labtechConnInfo
+    urls <- query conn uploadContainsStr (toField ("url" :: String), toField s) :: IO [UploadEntry]
+    tits <- query conn uploadContainsStr (toField ("title" :: String), toField s) :: IO [UploadEntry]
     return (length urls /= 0 || length tits /= 0)
 
 getUniqueName :: IO String

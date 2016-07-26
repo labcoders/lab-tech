@@ -18,6 +18,7 @@ data Command
     | List
     | Get
     | Say String
+    | Idea String
     deriving (Show, Read)
 
 parseCommand :: CommandEnv String -> Either String Command
@@ -34,7 +35,7 @@ parseCommand env
     commandParser :: Parser Command
     commandParser = do
       void (try (string "!") <?> "bang")
-      choice [uploadCommand, helpCommand, listCommand, sayCommand]
+      choice [uploadCommand, helpCommand, listCommand, sayCommand, ideaCommand]
 
     sayCommand :: Parser Command
     sayCommand = do
@@ -50,6 +51,13 @@ parseCommand env
       skipMany spaceChar
       p <- anyChar `someTill` eof
       pure $ Upload url p
+
+    ideaCommand :: Parser Command
+    ideaCommand = do
+      commandName "idea"
+      skipSome spaceChar
+      idea <- anyChar `someTill` eof
+      pure $ Idea idea
 
     helpCommand :: Parser Command
     helpCommand = commandName "help" *> pure Help
@@ -68,9 +76,17 @@ handleCommand (CommandEnv
     List -> do
         es <- liftIO queryUploads
         mapM_ (ircPrivmsg target) $ map formatEntry es
+    Idea i -> do
+        hasIdea <- liftIO $ ideaTableContains i
+        if hasIdea then
+            ircPrivmsg target $ 
+            "Idea:already exists in database."
+        else do
+            res <- liftIO $ insertIdea i
+            ircPrivmsg target res
     Upload url title -> do
-        hasUrl <- liftIO $ dbContains url
-        hasTitle <- liftIO $ dbContains title
+        hasUrl <- liftIO $ uploadTableContains url
+        hasTitle <- liftIO $ uploadTableContains title
         if hasUrl then
             ircPrivmsg target $ 
             "Url: " ++ url ++ " already exists in database."
