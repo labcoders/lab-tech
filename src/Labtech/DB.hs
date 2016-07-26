@@ -41,6 +41,10 @@ formatEntry (UploadEntry
                })
                = title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
 
+uploadSelectAllStr :: Query
+uploadSelectAllStr
+  = "SELECT url, title, filepath, uploadtime, nick FROM uploads"
+
 uploadSelectStr :: Query
 uploadSelectStr = "select url, title, filepath, uploadtime, nick from uploads where title = ?"
 
@@ -49,6 +53,9 @@ uploadInsertStr = "insert into uploads (url, title, filepath, uploadtime, nick) 
 
 uploadContainsStr :: Query
 uploadContainsStr = "select url, title, filepath, uploadtime, nick from uploads where ? = ?"
+
+ideaSelectAllStr :: Query
+ideaSelectAllStr = "SELECT idea FROM ideas"
 
 ideaContainsStr :: Query
 ideaContainsStr = "select idea from ideas where idea = ?"
@@ -72,9 +79,9 @@ insertIdea id nick = do
     conn <- connect labtechConnInfo
     r <- (try $ execute conn ideaInsertStr (Only id)) :: IO (Either SqlError Int64)
     case r of
-            Left ex -> return $ "Failed to upload idea\"" ++ 
-                                id ++ " from " ++ (unNick nick) ++ 
-                                ". Exception was: " ++ 
+            Left ex -> return $ "Failed to upload idea\"" ++
+                                id ++ " from " ++ (unNick nick) ++
+                                ". Exception was: " ++
                                 (displayException ex)
             Right i -> return $ "Got it, " ++ unNick nick ++ "."
 
@@ -101,8 +108,7 @@ getUniqueName = do
 queryUploads :: IO [UploadEntry]
 queryUploads = do
     conn <- connect labtechConnInfo
-    print =<< formatQuery conn uploadSelectStr ()
-    query conn uploadSelectStr (Only ("*" :: String))
+    query_ conn uploadSelectAllStr
 
 getUpload :: String -> IO (Maybe String)
 getUpload s = do
@@ -115,7 +121,7 @@ getUpload s = do
 listIdeas :: IO [String]
 listIdeas = do
     conn <- connect labtechConnInfo
-    query conn uploadSelectStr (Only ("*" :: String))
+    map fromOnly <$> query_ conn ideaSelectAllStr
 
 insertUpload :: Url -> Title -> FilePath -> Nick -> IO String
 insertUpload url tit fp nick = do
