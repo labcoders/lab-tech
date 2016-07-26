@@ -116,10 +116,10 @@ handleCommand (CommandEnv
         hasUrl <- liftIO $ uploadTableContains url
         hasTitle <- liftIO $ uploadTableContains title
         if hasUrl then
-            ircPrivmsg target $ 
+            ircPrivmsg target $
             "Url: " ++ url ++ " already exists in database."
         else if hasTitle then
-            ircPrivmsg target $ 
+            ircPrivmsg target $
             "Title: \"" ++ title ++ "\" already exists in database."
         else do
             fp <- liftIO $ saveLink url title
