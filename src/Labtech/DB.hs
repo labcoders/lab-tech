@@ -38,7 +38,7 @@ formatIdea :: Idea -> String
 formatIdea (Idea
                { ideaKey = key
                , ideaText = txt
-               }) 
+               })
                = "(" ++ (show key) ++ ") - " ++ txt
 
 formatEntry :: UploadEntry -> String
@@ -104,12 +104,12 @@ deleteFrom :: ListTarget -> Int -> IO String
 deleteFrom t i = do
     conn <- connect labtechConnInfo
     res  <- case t of
-		ListUploads -> 
-		    (try $ 
-			execute conn deleteUploadsQuery $ Only i) :: IO (Either SqlError Int64)
-		ListIdeas -> 
-		    (try $ 
-			execute conn deleteIdeasQuery $ Only i) :: IO (Either SqlError Int64)
+        ListUploads ->
+            (try $
+            execute conn deleteUploadsQuery $ Only i) :: IO (Either SqlError Int64)
+        ListIdeas ->
+            (try $
+            execute conn deleteIdeasQuery $ Only i) :: IO (Either SqlError Int64)
     case res of
         Left ex -> return $ "Failed to delete. Exception was: " ++
                     displayException ex
