@@ -42,7 +42,7 @@ formatEntry (UploadEntry
                = title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
 
 uploadSelectStr :: Query
-uploadSelectStr = "select url, title, filepath, uploadtime, nick from uploads"
+uploadSelectStr = "select url, title, filepath, uploadtime, nick from uploads where title = ?"
 
 uploadInsertStr :: Query
 uploadInsertStr = "insert into uploads (url, title, filepath, uploadtime, nick) values (?, ?, ?, DEFAULT, ?)"
@@ -76,8 +76,7 @@ insertIdea id nick = do
                                 id ++ " from " ++ (unNick nick) ++ 
                                 ". Exception was: " ++ 
                                 (displayException ex)
-            Right i -> return $ "Successfully uploaded idea\"" ++ 
-                                id ++ " from " ++ (unNick nick)
+            Right i -> return $ "Got it, " ++ unNick nick ++ "."
 
 ideaTableContains :: String -> IO Bool
 ideaTableContains s = do
@@ -103,7 +102,20 @@ queryUploads :: IO [UploadEntry]
 queryUploads = do
     conn <- connect labtechConnInfo
     print =<< formatQuery conn uploadSelectStr ()
-    query_ conn uploadSelectStr
+    query conn uploadSelectStr (Only ("*" :: String))
+
+getUpload :: String -> IO (Maybe String)
+getUpload s = do
+    conn <- connect labtechConnInfo
+    items <- query conn uploadSelectStr (Only (s :: String))
+    case items of
+	[] -> return $ Nothing
+        (x:xs) -> return $ Just x
+
+listIdeas :: IO [String]
+listIdeas = do
+    conn <- connect labtechConnInfo
+    query conn uploadSelectStr (Only ("*" :: String))
 
 insertUpload :: Url -> Title -> FilePath -> Nick -> IO String
 insertUpload url tit fp nick = do

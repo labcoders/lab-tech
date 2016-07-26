@@ -1,5 +1,7 @@
 module Labtech.Command where
 
+import qualified Data.Char as C
+
 import Labtech.Command.Types
 import Labtech.DB
 import Labtech.Help ( help )
@@ -15,7 +17,7 @@ import Text.Megaparsec.String
 data Command
     = Upload Url Title
     | Help
-    | List
+    | List String
     | Get
     | Say String
     | Idea String
@@ -63,7 +65,11 @@ parseCommand env
     helpCommand = commandName "help" *> pure Help
 
     listCommand :: Parser Command
-    listCommand = commandName "list" *> pure List
+    listCommand = do
+      commandName "list"
+      skipSome spaceChar
+      s <- anyChar `someTill` eof
+      pure $ List s
 
 handleCommand :: CommandEnv Command -> Labtech ()
 handleCommand (CommandEnv
@@ -73,9 +79,15 @@ handleCommand (CommandEnv
   }) = case command of
     Help -> mapM_ (ircPrivmsg target) help
     Say str -> ircPrivmsg target str
-    List -> do
-        es <- liftIO queryUploads
-        mapM_ (ircPrivmsg target) $ map formatEntry es
+    List s -> do
+	case map C.toLower s of
+	    "ideas" -> do
+		es <- liftIO listIdeas
+		mapM_ (ircPrivmsg target) es
+	    _ -> do
+		es <- liftIO queryUploads
+		mapM_ (ircPrivmsg target) $ map formatEntry es
+
     Idea i -> do
         hasIdea <- liftIO $ ideaTableContains i
         if hasIdea then
