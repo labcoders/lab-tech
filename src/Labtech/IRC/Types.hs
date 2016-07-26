@@ -3,19 +3,39 @@
 module Labtech.IRC.Types where
 
 import Control.Monad.Reader
+import qualified Data.Map as M
+
+-- | Unique identifier for workers.
+newtype ServerName = ServerName { unWorkerName :: String }
+  deriving (Eq, Ord, Show)
+
+-- | Target for message replication.
+data ReplicationTarget
+  = ReplicationTarget
+    { replicationServer :: ServerName
+    -- ^ The name of the server to replicate the message to.
+    , replicationTarget :: MessageTarget
+    -- ^ The channel or nick to send the message to on that server.
+    }
 
 -- | Nickname of an IRC user.
 newtype Nick = Nick { unNick :: String }
+  deriving (Eq, Ord, Show)
 
 -- | Username of an IRC user.
 newtype Username = Username { unUsername :: String }
+  deriving (Eq, Ord, Show)
 
 -- | Real name of an IRC user.
 newtype RealName = RealName { unRealName :: String }
+  deriving (Eq, Ord, Show)
 
 -- | An IRC channel, including the @#@.
 newtype Channel = Channel { unChannel :: String }
+  deriving (Eq, Ord, Show)
+
 newtype Ping = Ping { unPing :: String }
+  deriving (Eq, Ord, Show)
 
 -- | The target of a privmsg.
 data MessageTarget
@@ -23,6 +43,7 @@ data MessageTarget
   -- ^ The target of the message is a channel.
   | NickTarget Nick
   -- ^ The target of the message is a specific user.
+  deriving (Eq, Ord, Show)
 
 -- | Convert a message target into an 'Either'.
 targetToEither :: MessageTarget -> Either Channel Nick
@@ -43,6 +64,7 @@ data MessageOrigin
     , originHost :: String
     -- ^ The hostname of the sender.
     }
+  deriving (Eq, Ord, Show)
 
 data Message
   = Privmsg MessageOrigin MessageTarget String
@@ -59,6 +81,8 @@ data ServerSpec
     , serverChannels :: [Channel]
     , serverUsername :: Username
     , serverRealName :: RealName
+    , serverWorkerName :: ServerName
+    , serverReplication :: M.Map Channel [ReplicationTarget]
     }
 
 -- | Concrete 'IO'-based interpreter for IRC commands.

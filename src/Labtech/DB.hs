@@ -34,7 +34,7 @@ labtechConnInfo = defaultConnectInfo
                 }
 
 formatEntry :: UploadEntry -> String
-formatEntry (UploadEntry 
+formatEntry (UploadEntry
                { uploadUrl = url
                , uploadTitle = title
                , uploadNick = nick
@@ -87,10 +87,10 @@ insertUpload url tit fp nick = do
     print =<< formatQuery conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)
     r <- (try $ execute conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)) :: IO (Either SqlError Int64)
     case r of
-        Left ex -> return $ "Failed to upload \"" ++ 
-                            tit ++ "\" (" ++ url ++ ") from " ++ 
-                            (unNick nick) ++ ". Exception was: " ++ 
+        Left ex -> return $ "Failed to upload \"" ++
+                            tit ++ "\" (" ++ url ++ ") from " ++
+                            (unNick nick) ++ ". Exception was: " ++
                             (displayException ex)
-        Right i -> return $ "Successfully uploaded \"" ++ 
-                            tit ++ "\" (" ++ url ++ ") from " ++ 
+        Right i -> return $ "Successfully uploaded \"" ++
+                            tit ++ "\" (" ++ url ++ ") from " ++
                             (unNick nick)

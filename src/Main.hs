@@ -8,13 +8,17 @@
 module Main where
 
 import Control.Concurrent ( forkIO )
+import Control.Concurrent.Chan
 
 import Labtech
+import qualified Labtech.InternalMessaging as IM
 import Labtech.IRC.Servers ( servers )
 
 main :: IO ()
 main = do
-  mapM_ (forkIO . runOnServer) servers
+  regChan <- newChan
+  _ <- forkIO (IM.mainLoop regChan)
+  mapM_ (forkIO . runOnServer regChan) servers
   putStrLn "press return to quit"
   _ <- getLine
   pure ()

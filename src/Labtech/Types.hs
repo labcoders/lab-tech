@@ -7,7 +7,6 @@ module Labtech.Types where
 import Labtech.IRC.Types
 import Labtech.Help ( help )
 
-import Control.Concurrent.Chan
 import Control.Monad.Reader
 
 -- | A constraint in which the monad @t n@ can perform IRC actions as well as
@@ -66,12 +65,3 @@ simpleLabEnv = LabEnv
   , _listE = error "List unsupported."
   , _uploadE = error "Upload unsupported."
   }
-
--- | A pair of channels for bidirectional communication.
-data Bichan i o
-  = Bichan
-    { readSide :: !(Chan i)
-    , writeSide :: !(Chan o)
-    }
-
-type Bichan' a = Bichan a a
