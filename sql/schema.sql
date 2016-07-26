@@ -1,0 +1,20 @@
+BEGIN;
+
+DROP TABLE IF EXISTS uploads;
+DROP TABLE IF EXISTS ideas;
+
+CREATE TABLE uploads (
+    id SERIAL PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL UNIQUE,
+    filepath TEXT NOT NULL UNIQUE,
+    uploadtime TIMESTAMPTZ NOT NULL DEFAULT now(),
+    nick TEXT NOT NULL
+);
+
+CREATE TABLE ideas (
+    id SERIAL PRIMARY KEY,
+    idea TEXT NOT NULL UNIQUE
+);
+
+COMMIT;
