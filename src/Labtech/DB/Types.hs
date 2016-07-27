@@ -9,7 +9,8 @@ import Labtech.Types
 
 data UploadEntry
     = UploadEntry
-    { uploadUrl :: Url
+    { uploadKey :: Int
+    , uploadUrl :: Url
     , uploadTitle :: Title
     , uploadFilepath :: FilePath
     , uploadUploadedTime :: UTCTime
@@ -19,6 +20,7 @@ data UploadEntry
 instance FromRow UploadEntry where
     fromRow  = UploadEntry
            <$> field
+           <*> field
            <*> field
            <*> field
            <*> field

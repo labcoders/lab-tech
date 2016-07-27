@@ -16,6 +16,7 @@ import qualified Data.ByteString.Char8 as C
 import qualified Data.Text as T
 
 import Labtech.Types
+import Labtech.Command.Types
 import Labtech.DB.Types
 import Labtech.IRC.Types
 
@@ -35,24 +36,25 @@ labtechConnInfo = defaultConnectInfo
 
 formatEntry :: UploadEntry -> String
 formatEntry (UploadEntry
-               { uploadUrl = url
+               { uploadKey = key
+               , uploadUrl = url
                , uploadTitle = title
                , uploadNick = nick
                })
-               = title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
+               = "(" ++ (show key) ++ ") - " ++ title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
 
 uploadSelectAllStr :: Query
 uploadSelectAllStr
-  = "SELECT url, title, filepath, uploadtime, nick FROM uploads"
+  = "SELECT id, url, title, filepath, uploadtime, nick FROM uploads"
 
 uploadSelectStr :: Query
-uploadSelectStr = "select url, title, filepath, uploadtime, nick from uploads where title = ?"
+uploadSelectStr = "select id, url, title, filepath, uploadtime, nick from uploads where title = ?"
 
 uploadInsertStr :: Query
 uploadInsertStr = "insert into uploads (url, title, filepath, uploadtime, nick) values (?, ?, ?, DEFAULT, ?)"
 
 uploadContainsStr :: Query
-uploadContainsStr = "select url, title, filepath, uploadtime, nick from uploads where ? = ?"
+uploadContainsStr = "select id, url, title, filepath, uploadtime, nick from uploads where ? = ?"
 
 ideaSelectAllStr :: Query
 ideaSelectAllStr = "SELECT idea FROM ideas"
@@ -62,6 +64,9 @@ ideaContainsStr = "select idea from ideas where idea = ?"
 
 ideaInsertStr :: Query
 ideaInsertStr = "insert into ideas (idea) values (?)"
+
+deleteQuery :: Query
+deleteQuery = "delete from ? where ? = ?"
 
 -- We have really bad UIDs because i'm quite tired.
 saveLink :: Url -> Title -> IO (Maybe FilePath)
@@ -84,6 +89,15 @@ insertIdea id nick = do
                                 ". Exception was: " ++
                                 (displayException ex)
             Right i -> return $ "Got it, " ++ unNick nick ++ "."
+
+deleteFrom :: String -> Int -> IO String
+deleteFrom s i = do
+    conn <- connect labtechConnInfo
+    res  <- (try $ execute conn deleteQuery (s :: String, "id" :: String, i :: Int)) :: IO (Either SqlError Int64)
+    case res of
+        Left ex -> return $ "Failed to delete. Exception was: " ++
+                    displayException ex
+        Right a -> return "Done"
 
 ideaTableContains :: String -> IO Bool
 ideaTableContains s = do
@@ -115,7 +129,7 @@ getUpload s = do
     conn <- connect labtechConnInfo
     items <- query conn uploadSelectStr (Only (s :: String))
     case items of
-	[] -> return $ Nothing
+        [] -> return $ Nothing
         (x:xs) -> return $ Just x
 
 listIdeas :: IO [String]

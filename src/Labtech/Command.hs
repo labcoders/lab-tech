@@ -14,11 +14,6 @@ import Data.Bifunctor ( first )
 import Text.Megaparsec
 import Text.Megaparsec.String
 
-data ListTarget
-  = ListUploads
-  | ListIdeas
-  deriving (Eq, Ord, Read, Show)
-
 renderListTarget :: ListTarget -> String
 renderListTarget t = case t of
   ListUploads -> "uploads"
@@ -28,6 +23,7 @@ data Command
     = Upload Url Title
     | Help
     | List ListTarget
+    | Delete ListTarget Int
     | Get
     | Say String
     | Idea String
@@ -47,13 +43,22 @@ parseCommand env
     commandParser :: Parser Command
     commandParser = do
       void (try (string "!") <?> "bang")
-      choice [uploadCommand, helpCommand, listCommand, sayCommand, ideaCommand]
+      choice [uploadCommand, helpCommand, listCommand, sayCommand, ideaCommand, deleteCommand]
 
     sayCommand :: Parser Command
     sayCommand = do
       commandName "say"
       skipSome spaceChar
       Say <$> anyChar `manyTill` eof
+
+    deleteCommand :: Parser Command
+    deleteCommand = do
+      commandName "delete"
+      skipSome spaceChar
+      tgt <- listTarget
+      skipMany spaceChar
+      i <- numberChar `someTill` eof
+      pure $ Delete tgt (read i)
 
     uploadCommand :: Parser Command
     uploadCommand = do
@@ -104,11 +109,15 @@ handleCommand (CommandEnv
       then ircPrivmsg target $ "No " ++ renderListTarget s
       else mapM_ (ircPrivmsg target) f
 
+    Delete l i -> do
+        b <- liftIO $ deleteFrom (renderListTarget l) i
+        ircPrivmsg target b
+
     Idea i -> do
         hasIdea <- liftIO $ ideaTableContains i
         if hasIdea then
             ircPrivmsg target $
-            "Idea:already exists in database."
+            "Idea already exists in database."
         else do
             res <- liftIO $ insertIdea i nick
             ircPrivmsg target res
@@ -129,5 +138,5 @@ handleCommand (CommandEnv
                     ircPrivmsg target res
                 Nothing -> ircPrivmsg target $ "Could not save \""
                            ++ title ++ "\" (" ++ url ++ ")"
-
+    
     _ -> ircPrivmsg target $ "unimplemented command: " ++ show command
