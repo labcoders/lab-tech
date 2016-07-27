@@ -65,8 +65,11 @@ ideaContainsStr = "select idea from ideas where idea = ?"
 ideaInsertStr :: Query
 ideaInsertStr = "insert into ideas (idea) values (?)"
 
-deleteQuery :: Query
-deleteQuery = "delete from ? where ? = ?"
+deleteUploadsQuery :: Query
+deleteUploadsQuery = "delete from uploads where id = ?"
+
+deleteIdeasQuery :: Query
+deleteIdeasQuery = "delete from ideas where id = ?"
 
 -- We have really bad UIDs because i'm quite tired.
 saveLink :: Url -> Title -> IO (Maybe FilePath)
@@ -90,10 +93,16 @@ insertIdea id nick = do
                                 (displayException ex)
             Right i -> return $ "Got it, " ++ unNick nick ++ "."
 
-deleteFrom :: String -> Int -> IO String
-deleteFrom s i = do
+deleteFrom :: ListTarget -> Int -> IO String
+deleteFrom t i = do
     conn <- connect labtechConnInfo
-    res  <- (try $ execute conn deleteQuery (s :: String, "id" :: String, i :: Int)) :: IO (Either SqlError Int64)
+    res  <- case t of
+		ListUploads -> 
+		    (try $ 
+			execute conn deleteUploadsQuery $ Only i) :: IO (Either SqlError Int64)
+		ListIdeas -> 
+		    (try $ 
+			execute conn deleteIdeasQuery $ Only i) :: IO (Either SqlError Int64)
     case res of
         Left ex -> return $ "Failed to delete. Exception was: " ++
                     displayException ex

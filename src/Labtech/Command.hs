@@ -110,7 +110,7 @@ handleCommand (CommandEnv
       else mapM_ (ircPrivmsg target) f
 
     Delete l i -> do
-        b <- liftIO $ deleteFrom (renderListTarget l) i
+        b <- liftIO $ deleteFrom l i
         ircPrivmsg target b
 
     Idea i -> do
