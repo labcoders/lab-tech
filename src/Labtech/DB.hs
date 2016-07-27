@@ -34,6 +34,13 @@ labtechConnInfo = defaultConnectInfo
                 , connectDatabase = "labtech"
                 }
 
+formatIdea :: Idea -> String
+formatIdea (Idea
+               { ideaKey = key
+               , ideaText = txt
+               }) 
+               = "(" ++ (show key) ++ ") - " ++ txt
+
 formatEntry :: UploadEntry -> String
 formatEntry (UploadEntry
                { uploadKey = key
@@ -57,7 +64,7 @@ uploadContainsStr :: Query
 uploadContainsStr = "select id, url, title, filepath, uploadtime, nick from uploads where ? = ?"
 
 ideaSelectAllStr :: Query
-ideaSelectAllStr = "SELECT idea FROM ideas"
+ideaSelectAllStr = "SELECT id, idea FROM ideas"
 
 ideaContainsStr :: Query
 ideaContainsStr = "select idea from ideas where idea = ?"
@@ -141,10 +148,10 @@ getUpload s = do
         [] -> return $ Nothing
         (x:xs) -> return $ Just x
 
-listIdeas :: IO [String]
+listIdeas :: IO [Idea]
 listIdeas = do
     conn <- connect labtechConnInfo
-    map fromOnly <$> query_ conn ideaSelectAllStr
+    query_ conn ideaSelectAllStr
 
 insertUpload :: Url -> Title -> FilePath -> Nick -> IO String
 insertUpload url tit fp nick = do

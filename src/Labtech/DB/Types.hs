@@ -7,6 +7,12 @@ import Data.Time.Clock
 import Labtech.IRC.Types
 import Labtech.Types
 
+data Idea
+    = Idea
+    { ideaKey :: Int
+    , ideaText :: String
+    }
+
 data UploadEntry
     = UploadEntry
     { uploadKey :: Int
@@ -16,6 +22,11 @@ data UploadEntry
     , uploadUploadedTime :: UTCTime
     , uploadNick :: Nick
     }
+
+instance FromRow Idea where
+    fromRow = Idea
+           <$> field
+           <*> field
 
 instance FromRow UploadEntry where
     fromRow  = UploadEntry

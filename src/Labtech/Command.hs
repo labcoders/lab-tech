@@ -101,7 +101,7 @@ handleCommand (CommandEnv
       f <- liftIO $ case s of
             ListIdeas -> do
               putStrLn "listing ideas"
-              listIdeas
+              map formatIdea <$> listIdeas
             ListUploads -> do
               putStrLn "listing uploads"
               map formatEntry <$> queryUploads
