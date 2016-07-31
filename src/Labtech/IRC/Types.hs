@@ -2,7 +2,6 @@
 
 module Labtech.IRC.Types where
 
-import Control.Monad.Reader
 import qualified Data.Map as M
 
 -- | Unique identifier for workers.
@@ -69,6 +68,7 @@ data MessageOrigin
 data Message
   = Privmsg MessageOrigin MessageTarget String
   | Pingmsg Ping
+  | NickInUse
 
 -- | A specification of an IRC server connection. This includes the nicknames
 -- that labtech will use on the server as well as the channels that labtech
@@ -98,27 +98,23 @@ data IrcEnv
 
 -- | Class of monads capable of performing IRC actions.
 class MonadIRC m where
+  -- | Sets the nickname.
   ircNick :: Nick -> m ()
+
+  -- | Registers with the IRC server.
   ircUser :: Username -> RealName -> m ()
+
+  -- | Joins a channel.
   ircJoin :: Channel -> m ()
+
+  -- | Responds to a ping.
   ircPong :: Ping -> m ()
+
+  -- | Blocks until receipt of the next server-issued message.
   ircNext :: m Message
+
+  -- | Sends a message.
   ircPrivmsg :: MessageTarget -> String -> m ()
 
-instance MonadIO m => MonadIRC (ReaderT IrcEnv m) where
-  ircNick nick = do
-    f <- asks _nickE
-    liftIO $ f nick
-  ircUser user real = do
-    f <- asks _userE
-    liftIO $ f user real
-  ircJoin chan = do
-    f <- asks _joinE
-    liftIO $ f chan
-  ircPong ping = do
-    f <- asks _pongE
-    liftIO $ f ping
-  ircNext = liftIO =<< asks _nextE
-  ircPrivmsg target msg = do
-    f <- asks _privmsgE
-    liftIO $ f target msg
+  -- | Gets the next preferred nick.
+  ircNextNick :: m Nick

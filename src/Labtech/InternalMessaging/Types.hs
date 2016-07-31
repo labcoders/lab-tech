@@ -61,9 +61,7 @@ data InternalMessageBodySend
 -- in the inter-server messaging system.
 data WorkerRegistration
   = WorkerRegistration
-    { regName :: WorkerName
-    -- ^ The name associated with the worker. Other workers will use this name
-    -- to identify this particular server.
-    , regChan :: Chan InternalMessageSW
-    -- ^ A channel for the server to use to send commands to the client.
-    }
+    WorkerName
+    (Chan InternalMessageSW)
+  | WorkerUnregistration
+    WorkerName

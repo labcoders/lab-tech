@@ -21,21 +21,36 @@ mainLoop workerChan = do
   void $ forkIO $ forever $ processMessage mmap =<< readChan msgChan
 
   forever $ do
-    WorkerRegistration { regName = name, regChan = chan }  <- readChan workerChan
+    reg  <- readChan workerChan
     modifyMVar_ mmap $ \m -> do
-      case M.lookup name m of
-        Just _ -> do
-          writeChan chan $ InternalMessage
-            { intmsgSender = ()
-            , intmsgBody = RegistrationResult (RegistrationFailed WorkerNameInUse)
-            }
-          pure m
-        Nothing -> do
-          writeChan chan $ InternalMessage
-            { intmsgSender = ()
-            , intmsgBody = RegistrationResult (RegistrationOk msgChan)
-            }
-          pure $ M.insert name chan m
+      case reg of
+        WorkerRegistration name chan -> do
+          let name' = unWorkerName name
+          case M.lookup name m of
+            Just _ -> do
+              putStrLn $ "IM: registration failed for " ++ name' ++ ": name in use."
+              writeChan chan $ InternalMessage
+                { intmsgSender = ()
+                , intmsgBody = RegistrationResult (RegistrationFailed WorkerNameInUse)
+                }
+              pure m
+            Nothing -> do
+              putStrLn $ "IM: registration successful for " ++ name'
+              writeChan chan $ InternalMessage
+                { intmsgSender = ()
+                , intmsgBody = RegistrationResult (RegistrationOk msgChan)
+                }
+              pure $ M.insert name chan m
+        WorkerUnregistration name -> do
+          let name' = unWorkerName name
+          case M.lookup name m of
+            Just _ -> do
+              putStrLn $ "IM: unregistering worker: " ++ name'
+              pure (M.delete name m)
+            Nothing -> do
+              putStrLn $ "IM: received unregister request for " ++ name' ++
+                " but " ++ name' ++ " is not registered."
+              pure m
 
 processMessage
   :: MVar (M.Map WorkerName (Chan InternalMessageSW))
@@ -50,10 +65,11 @@ processMessage mmap (InternalMessage { intmsgSender = sender, intmsgBody = body 
     Just _ -> do
       case body of
         InterServerPrivmsg name recp _ origin body' -> do
+          putStrLn $ "IM: received interserver privmsg from " ++ unWorkerName sender
           let nick = originNick origin
           case M.lookup name m of
             Nothing ->
-              putStrLn $ "worker not signed in for replication: " ++ unWorkerName name
+              putStrLn $ "worker not sign in for replication: " ++ unWorkerName name
             Just dchan -> do
               writeChan dchan $ InternalMessage
                 { intmsgSender = ()

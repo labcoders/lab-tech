@@ -13,8 +13,6 @@ import Database.PostgreSQL.Simple.ToField
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 
-import qualified Data.Text as T
-
 import Labtech.Types
 import Labtech.Command.Types
 import Labtech.DB.Types
@@ -80,25 +78,25 @@ deleteIdeasQuery = "delete from ideas where id = ?"
 
 -- We have really bad UIDs because i'm quite tired.
 saveLink :: Url -> Title -> IO (Maybe FilePath)
-saveLink url tit = do
+saveLink url _ = do
     result <- simpleHTTP $ getRequest url
     case result of
-        Left err -> return Nothing
+        Left _ -> return Nothing
         Right rp -> do
             fn <- getUniqueName
             B.writeFile (uploadFilePath </> fn) $ C.pack $ rspBody rp
             return $ Just (uploadFilePath </> fn)
 
 insertIdea :: String -> Nick-> IO String
-insertIdea id nick = do
+insertIdea idea nick = do
     conn <- connect labtechConnInfo
-    r <- (try $ execute conn ideaInsertStr (Only id)) :: IO (Either SqlError Int64)
+    r <- (try $ execute conn ideaInsertStr (Only idea)) :: IO (Either SqlError Int64)
     case r of
             Left ex -> return $ "Failed to upload idea\"" ++
-                                id ++ " from " ++ (unNick nick) ++
+                                idea ++ " from " ++ (unNick nick) ++
                                 ". Exception was: " ++
                                 (displayException ex)
-            Right i -> return $ "Got it, " ++ unNick nick ++ "."
+            Right _ -> return $ "Got it, " ++ unNick nick ++ "."
 
 deleteFrom :: ListTarget -> Int -> IO String
 deleteFrom t i = do
@@ -113,7 +111,7 @@ deleteFrom t i = do
     case res of
         Left ex -> return $ "Failed to delete. Exception was: " ++
                     displayException ex
-        Right a -> return "Done"
+        Right _ -> return "Done"
 
 ideaTableContains :: String -> IO Bool
 ideaTableContains s = do
@@ -146,7 +144,7 @@ getUpload s = do
     items <- query conn uploadSelectStr (Only (s :: String))
     case items of
         [] -> return $ Nothing
-        (x:xs) -> return $ Just x
+        (x:_) -> return $ Just x
 
 listIdeas :: IO [Idea]
 listIdeas = do
@@ -163,6 +161,6 @@ insertUpload url tit fp nick = do
                             tit ++ "\" (" ++ url ++ ") from " ++
                             (unNick nick) ++ ". Exception was: " ++
                             (displayException ex)
-        Right i -> return $ "Successfully uploaded \"" ++
+        Right _ -> return $ "Successfully uploaded \"" ++
                             tit ++ "\" (" ++ url ++ ") from " ++
                             (unNick nick)

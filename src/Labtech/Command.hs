@@ -1,7 +1,5 @@
 module Labtech.Command where
 
-import qualified Data.Char as C
-
 import Labtech.Command.Types
 import Labtech.DB
 import Labtech.Help ( help )
@@ -89,7 +87,7 @@ parseCommand env
     listCommand = do
       commandName "list" *> skipSome spaceChar *> (List <$> listTarget) <* eof
 
-handleCommand :: CommandEnv Command -> Labtech ()
+handleCommand :: MonadLabIrcIO m => CommandEnv Command -> m ()
 handleCommand (CommandEnv
   { commandBody = command
   , commandTarget = target
@@ -138,5 +136,5 @@ handleCommand (CommandEnv
                     ircPrivmsg target res
                 Nothing -> ircPrivmsg target $ "Could not save \""
                            ++ title ++ "\" (" ++ url ++ ")"
-    
+
     _ -> ircPrivmsg target $ "unimplemented command: " ++ show command

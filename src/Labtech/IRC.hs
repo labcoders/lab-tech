@@ -52,25 +52,33 @@ makeIrcEnv handle _ = do
 parseMessage :: String -> Either String Message
 parseMessage = first parseErrorPretty . runParser messageParser "irc" where
   messageParser :: Parser Message
-  messageParser = privmsg <|> ping
+  messageParser = choice [ privmsg, ping, nickInUse ] where
+    privmsg :: Parser Message
+    privmsg = do
+      origin <- try $ msgorigin <* many spaceChar <* string' "privmsg"
+      skipMany spaceChar
+      target <- msgtarget
+      void $ many spaceChar
+      void $ string ":"
+      msg <- anyChar `manyTill` eof
+      pure $ Privmsg origin target msg
 
-  privmsg :: Parser Message
-  privmsg = do
-    origin <- try $ msgorigin <* many spaceChar <* string' "privmsg"
-    skipMany spaceChar
-    target <- msgtarget
-    void $ many spaceChar
-    void $ string ":"
-    msg <- anyChar `manyTill` eof
-    pure $ Privmsg origin target msg
+    ping :: Parser Message
+    ping = do
+      void $ try $ string' "ping"
+      skipMany spaceChar
+      void $ string ":"
+      msg <- anyChar `manyTill` eof
+      pure $ Pingmsg (Ping msg)
 
-  ping :: Parser Message
-  ping = do
-    void $ try $ string' "ping"
-    skipMany spaceChar
-    void $ string ":"
-    msg <- anyChar `manyTill` eof
-    pure $ Pingmsg (Ping msg)
+    nickInUse :: Parser Message
+    nickInUse = do
+      void $ try $ do
+        string' ":"
+        void (anyChar `manyTill` spaceChar)
+        skipMany spaceChar
+        string "443"
+      pure NickInUse
 
   msgtarget :: Parser MessageTarget
   msgtarget = (ChannelTarget <$> channel) <|> (NickTarget <$> nick) where

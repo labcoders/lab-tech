@@ -1,7 +1,6 @@
 module Labtech.DB.Types where
 
 import Database.PostgreSQL.Simple.FromRow
-import qualified Data.Text as T
 import Data.Time.Clock
 
 import Labtech.IRC.Types

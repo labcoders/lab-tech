@@ -2,6 +2,7 @@
 
 module Labtech where
 
+import Labtech.Async
 import Labtech.Command
 import Labtech.Command.Types
 import qualified Labtech.InternalMessaging.Types as IM
@@ -9,9 +10,11 @@ import Labtech.IRC
 import Labtech.IRC.Types
 import Labtech.Types
 
-import Control.Concurrent ( forkIO, threadDelay )
+import Control.Concurrent ( threadDelay )
+import Control.Concurrent.Async
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
+import Control.Exception
 import Control.Monad.Reader
 import Data.List ( isPrefixOf )
 import qualified Data.Map as M
@@ -21,38 +24,34 @@ import System.IO
 -- | Runs an infinite loop that creates a labtech bot for the given server
 -- specification.
 runOnServer :: Chan IM.WorkerRegistration -> ServerSpec -> IO ()
-runOnServer chan spec = do
+runOnServer chan spec = void $ restarting (unregister chan spec) $ do
   h <- connectTo (serverHost spec) (PortNumber (fromIntegral $ serverPort spec))
   hSetBuffering h NoBuffering
   ircEnv <- makeIrcEnv h spec
 
   mmsgChan <- newEmptyMVar
 
-  void $ forkIO $ runLabtech ircEnv simpleLabEnv $ do
+  serverMsgT <- async $ runLabtech spec ircEnv simpleLabEnv $ do
     recvChan <- liftIO newChan
-    liftIO $ writeChan chan $ IM.WorkerRegistration
-      { IM.regName = serverWorkerName spec
-      , IM.regChan = recvChan
-      }
+    liftIO $ do
+      writeChan chan $ IM.WorkerRegistration (serverWorkerName spec) recvChan
     IM.InternalMessage { IM.intmsgBody = resp } <- liftIO $ readChan recvChan
 
-    serverChan <- case resp of
-      IM.RegistrationResult res -> case res of
-        IM.RegistrationOk serverChan -> pure serverChan
-        IM.RegistrationFailed reason -> liftIO $ print reason *> error "dead"
-      _ -> liftIO $ putStrLn "unexpected message" *> error "dead"
-
-    liftIO $ putMVar mmsgChan serverChan
-
-    forever $ do
-      IM.InternalMessage { IM.intmsgBody = body } <- liftIO $ readChan recvChan
-      case body of
-        IM.Privmsg target contents -> ircPrivmsg target contents
-        x -> liftIO $ putStrLn $ "unhandled internal message: " ++ show x
+    case resp of
+      IM.RegistrationResult (IM.RegistrationOk serverChan) -> do
+        liftIO $ putMVar mmsgChan serverChan
+        forever $ do
+          IM.InternalMessage { IM.intmsgBody = body } <- liftIO $ readChan recvChan
+          case body of
+            IM.Privmsg target contents -> ircPrivmsg target contents
+            x -> liftIO $ putStrLn $ "unhandled internal message: " ++ show x
+      _ -> do
+        liftIO $ putStrLn "unexpected message / registration failed"
+        error "TODO: throw exception"
 
   msgChan <- takeMVar mmsgChan
 
-  runLabtech ircEnv simpleLabEnv $ do
+  ircBotT <- async $ runLabtech spec ircEnv simpleLabEnv $ do
     -- do the IRC login and begin the main loop
     liftIO $ threadDelay 3000000
     ircUser (serverUsername spec) (serverRealName spec)
@@ -65,13 +64,24 @@ runOnServer chan spec = do
       liftIO $ threadDelay 1000000
     mainLoop msgChan spec
 
+  waitBoth serverMsgT ircBotT
+
 type CommandResponse = [String]
 
 mainLoop :: Chan IM.InternalMessageWS -> ServerSpec -> Labtech a
 mainLoop chan spec = forever $ handleMessage chan spec =<< ircNext
 
-handleMessage :: Chan IM.InternalMessageWS -> ServerSpec -> Message -> Labtech ()
+handleMessage
+  :: MonadLabIrcIO m
+  => Chan IM.InternalMessageWS
+  -> ServerSpec
+  -> Message
+  -> m ()
 handleMessage chan spec message = case message of
+  NickInUse -> do
+    nick <- ircNextNick
+    liftIO . putStrLn $ "NICK IN USE -- changing nick: " ++ unNick nick
+    ircNick nick
   Pingmsg ping -> ircPong ping
   Privmsg origin target (init -> body) -> do
     liftIO $ putStrLn $ concat
@@ -112,3 +122,14 @@ replicateMessage spec origin (ChannelTarget channel) chan msg = do
             origin
             msg
         }
+
+-- | Unregisters the worker for the given server spec from the internal
+-- messaging system.
+unregister
+  :: Chan IM.WorkerRegistration
+  -> ServerSpec
+  -> SomeException
+  -> IO (Maybe ())
+unregister chan spec _ = do
+  writeChan chan $ IM.WorkerUnregistration (serverWorkerName spec)
+  pure Nothing
