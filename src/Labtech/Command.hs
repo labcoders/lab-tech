@@ -18,14 +18,33 @@ renderListTarget t = case t of
   ListIdeas -> "ideas"
 
 data Command
-    = Upload Url Title
+    -- | Upload the contents of an internet resource to the database.
+    = Upload
+      Url -- ^ The URL whose contents is recorded to disk.
+      Title -- ^ A unique name for the upload.
+    -- | Show the labtech help.
     | Help
-    | List ListTarget
-    | Delete ListTarget Int
+    -- | List data from the database.
+    | List
+      ListTarget -- ^ The type of data to list.
+    -- | Delete something from the database.
+    | Delete
+      ListTarget -- ^ The type of data to delete.
+      Int -- ^ The index of the datum.
     | Get
-    | Say String
-    | Idea String
-    deriving (Show, Read)
+    -- | Make labtech say an arbitrary message.
+    | Say
+      String -- ^ The text to say.
+    -- | Record an idea to the database.
+    | Idea
+      String -- ^ The idea to record.
+    -- | Try to rename labtech to the first available given nick.
+    | Renick
+      [Nick]
+      -- ^ The nicks to try to rename labtech to. An empty list of nicks will
+      -- use the nick list from the server specification associated with the
+      -- worker thread that processes the message.
+    deriving (Show)
 
 parseCommand :: CommandEnv String -> Either String Command
 parseCommand env
@@ -41,7 +60,15 @@ parseCommand env
     commandParser :: Parser Command
     commandParser = do
       void (try (string "!") <?> "bang")
-      choice [uploadCommand, helpCommand, listCommand, sayCommand, ideaCommand, deleteCommand]
+      choice
+        [ uploadCommand
+        , helpCommand
+        , listCommand
+        , sayCommand
+        , ideaCommand
+        , deleteCommand
+        , renickCommand
+        ]
 
     sayCommand :: Parser Command
     sayCommand = do
@@ -73,6 +100,13 @@ parseCommand env
       skipSome spaceChar
       idea <- anyChar `someTill` eof
       pure $ Idea idea
+
+    renickCommand :: Parser Command
+    renickCommand = do
+      commandName "nick"
+      skipSome spaceChar
+      nicks <- fmap (map Nick) $ some alphaNumChar `sepBy` some spaceChar
+      pure $ Renick nicks
 
     listTarget :: Parser ListTarget
     listTarget = choice
@@ -136,5 +170,10 @@ handleCommand (CommandEnv
                     ircPrivmsg target res
                 Nothing -> ircPrivmsg target $ "Could not save \""
                            ++ title ++ "\" (" ++ url ++ ")"
+
+    Renick explicitNicks -> do
+      specNicks <- serverNicks <$> labGetSpec
+      labPreferNicks $ if null explicitNicks then specNicks else explicitNicks
+      labRenick
 
     _ -> ircPrivmsg target $ "unimplemented command: " ++ show command

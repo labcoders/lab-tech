@@ -93,10 +93,7 @@ handleMessage
   -> Message
   -> m ()
 handleMessage chan spec message = case message of
-  NickInUse -> do
-    nick <- ircNextNick
-    liftIO . putStrLn $ "NICK IN USE -- changing nick: " ++ unNick nick
-    ircNick nick
+  NickInUse -> labRenick
   Pingmsg ping -> ircPong ping
   Privmsg origin target (init -> body) -> do
     liftIO $ putStrLn $ concat

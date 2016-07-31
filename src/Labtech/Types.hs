@@ -85,9 +85,15 @@ subLabtech m = do
 
 -- | Class of monads capable of performing labtech actions.
 class MonadLab m where
-  labList :: MessageTarget -> m ()
-  labUpload :: Url -> FilePath -> MessageTarget -> m ()
-  labHelp :: MessageTarget -> m ()
+  labGetSpec :: m ServerSpec
+  labPreferNicks :: [Nick] -> m ()
+  -- | Tries to set the nick to the current most preferred nick.
+  labRenick :: m ()
+
+instance (MonadIO m, Monad m) => MonadLab (LabtechT m) where
+  labGetSpec = asks labSpec
+  labPreferNicks nicks = modify $ \s -> s { labNextNicks = nicks ++ labNextNicks s }
+  labRenick = ircNick =<< ircNextNick
 
 -- | Concrete 'IO'-based interpreter for Labtech commands.
 data LabEnv
@@ -120,13 +126,6 @@ instance (Monad m, MonadIO m) => MonadIRC (LabtechT m) where
     f <- asks (_privmsgE . labIrcEnv)
     liftIO $ f chan msg
   ircNextNick = nextNick
-
-instance MonadIO m => MonadLab (LabtechT m) where
-  labHelp target = do
-    f <- asks (_helpE . labLabEnv)
-    f target
-  labUpload = error "unimplemented: upload"
-  labList = error "unimplemented: list"
 
 simpleLabEnv :: LabEnv
 simpleLabEnv = LabEnv
