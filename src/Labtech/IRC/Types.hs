@@ -2,11 +2,33 @@
 
 module Labtech.IRC.Types where
 
+import Control.Monad
+import Control.Monad.Reader
+
 import qualified Data.Map as M
+import qualified Data.ByteString.Char8 as B
+
+import Network.Connection
+
+import System.IO
 
 -- | Unique identifier for workers.
 newtype ServerName = ServerName { unWorkerName :: String }
   deriving (Eq, Ord, Show)
+
+-- | Class of IRC connections from which we can
+-- read a line, or to which we can print a line.
+class IRCConn a where
+  ircGetLine :: a -> IO String
+  ircPrint :: a -> String -> IO ()
+
+instance IRCConn Handle where
+  ircGetLine = hGetLine
+  ircPrint = hPrint
+
+instance IRCConn Connection where
+  ircGetLine = (return . B.unpack) <=< (connectionGetLine 9999999)
+  ircPrint = \c b -> connectionPut c $ B.pack b
 
 -- | Target for message replication.
 data ReplicationTarget
@@ -83,6 +105,7 @@ data ServerSpec
     , serverRealName :: RealName
     , serverWorkerName :: ServerName
     , serverReplication :: M.Map Channel [ReplicationTarget]
+    , useSSL :: Bool
     }
 
 -- | Concrete 'IO'-based interpreter for IRC commands.

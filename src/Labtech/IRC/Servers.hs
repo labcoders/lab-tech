@@ -24,6 +24,7 @@ labcodersSpec = ServerSpec
       )
     ]
   , serverWorkerName = ServerName "labcoders"
+  , useSSL = True
   }
 
 freenodeSpec :: ServerSpec
@@ -43,5 +44,6 @@ freenodeSpec = ServerSpec
         ]
       )
     ]
+  , useSSL = False
   }
 

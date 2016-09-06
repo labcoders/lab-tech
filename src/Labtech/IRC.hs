@@ -5,19 +5,19 @@ import Labtech.IRC.Types
 import Control.Monad.Reader
 import Control.Concurrent.MVar ( MVar, newMVar, takeMVar, putMVar )
 import Data.Bifunctor ( first )
-import System.IO ( hGetLine, Handle )
+import System.IO ( hGetLine )
 import Text.Printf ( printf, hPrintf )
 import Text.Megaparsec
 import Text.Megaparsec.String
 
-write :: Handle -> String -> String -> IO ()
-write h a b = do
-    hPrintf h "%s %s\r\n" a b
+write :: (IRCConn c) => c -> String -> String -> IO ()
+write c a b = do
+    ircPrint c $ a ++ " " ++ b ++ "\r\n"
     printf "> %s %s\n" a b
 
-makeIrcEnv :: Handle -> ServerSpec -> IO IrcEnv
-makeIrcEnv handle _ = do
-  mh <- newMVar handle
+makeIrcEnv :: (IRCConn h) => h -> ServerSpec -> IO IrcEnv
+makeIrcEnv conn _ = do
+  mh <- newMVar conn
   let withH = _withH mh
   let _user (Username username) (RealName realname) = withH $ \h ->
         write h "USER" $ username ++ " 0 * :" ++ realname
@@ -33,7 +33,7 @@ makeIrcEnv handle _ = do
     , _privmsgE = _msg
     }
   where
-    _withH :: (MonadIO m) => MVar Handle -> (Handle -> m a) -> m a
+    _withH :: (MonadIO m, IRCConn c) => MVar c -> (c -> m a) -> m a
     _withH mh m = do
       h <- liftIO $ takeMVar mh
       x <- m h
@@ -41,7 +41,7 @@ makeIrcEnv handle _ = do
       pure x
 
     _next = do
-      line <- hGetLine handle
+      line <- ircGetLine conn
       liftIO $ putStrLn $ "< " ++ line
       case parseMessage line of
         Left _ -> do

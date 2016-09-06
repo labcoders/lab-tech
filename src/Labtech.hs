@@ -16,9 +16,11 @@ import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad.Reader
+import Data.Default.Class
 import Data.List ( isPrefixOf )
 import qualified Data.Map as M
 import Network
+import Network.Connection hiding ( connectTo )
 import System.IO
 
 -- | Runs an infinite loop that creates a labtech bot for the given server
@@ -27,7 +29,11 @@ runOnServer :: Chan IM.WorkerRegistration -> ServerSpec -> IO ()
 runOnServer chan spec = void $ restarting (unregister chan spec) $ do
   h <- connectTo (serverHost spec) (PortNumber (fromIntegral $ serverPort spec))
   hSetBuffering h NoBuffering
-  ircEnv <- makeIrcEnv h spec
+  ircEnv <- if useSSL spec then do
+              ctx <- initConnectionContext
+              conn <- connectFromHandle ctx h $ toConnParams spec
+              makeIrcEnv conn spec
+            else makeIrcEnv h spec
 
   mmsgChan <- newEmptyMVar
 
@@ -65,6 +71,15 @@ runOnServer chan spec = void $ restarting (unregister chan spec) $ do
     mainLoop msgChan spec
 
   waitBoth serverMsgT ircBotT
+
+toConnParams :: ServerSpec -> ConnectionParams
+toConnParams spec 
+  = ConnectionParams
+  { connectionHostname = serverHost spec
+  , connectionPort = fromIntegral $ serverPort spec
+  , connectionUseSecure = if useSSL spec then Just def else Nothing
+  , connectionUseSocks = Nothing -- no proxies.
+  }
 
 type CommandResponse = [String]
 
