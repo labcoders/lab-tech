@@ -26,7 +26,7 @@ import System.IO
 -- | Runs an infinite loop that creates a labtech bot for the given server
 -- specification.
 runOnServer :: Chan IM.WorkerRegistration -> ServerSpec -> IO ()
-runOnServer chan spec = void $ {- restarting (unregister chan spec) $ -} do
+runOnServer chan spec = void $ restarting (unregister chan spec) $ do
   h <- connectTo (serverHost spec) (PortNumber (fromIntegral $ serverPort spec))
   hSetBuffering h NoBuffering
   ircEnv <- if useSSL spec then do
