@@ -5,8 +5,7 @@ import Labtech.IRC.Types
 import Control.Monad.Reader
 import Control.Concurrent.MVar ( MVar, newMVar, takeMVar, putMVar )
 import Data.Bifunctor ( first )
-import System.IO ( hGetLine )
-import Text.Printf ( printf, hPrintf )
+import Text.Printf ( printf )
 import Text.Megaparsec
 import Text.Megaparsec.String
 
@@ -33,7 +32,7 @@ makeIrcEnv conn _ = do
     , _privmsgE = _msg
     }
   where
-    _withH :: (MonadIO m, IRCConn c) => MVar c -> (c -> m a) -> m a
+    _withH :: MonadIO m => MVar c -> (c -> m a) -> m a
     _withH mh m = do
       h <- liftIO $ takeMVar mh
       x <- m h
@@ -74,10 +73,10 @@ parseMessage = first parseErrorPretty . runParser messageParser "irc" where
     nickInUse :: Parser Message
     nickInUse = do
       void $ try $ do
-        string' ":"
+        void $ string' ":"
         void (anyChar `manyTill` spaceChar)
-        skipMany spaceChar
-        string "443"
+        void $ skipMany spaceChar
+        void $ string "443"
       pure NickInUse
 
   msgtarget :: Parser MessageTarget
