@@ -13,7 +13,7 @@ labcodersSpec = ServerSpec
   , serverUsername = Username "labtech"
   , serverRealName = RealName "labtech"
   , serverHost = "labcoders.club"
-  , serverPort = 6667
+  , serverPort = 6697
   , serverChannels = Channel <$> [ "#general" ]
   , serverReplication = M.fromList
     [ ( Channel "#general"
