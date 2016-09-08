@@ -76,7 +76,7 @@ parseMessage = first parseErrorPretty . runParser messageParser "irc" where
         void $ string' ":"
         void (anyChar `manyTill` spaceChar)
         void $ skipMany spaceChar
-        void $ string "443"
+        void $ string "433"
       pure NickInUse
 
   msgtarget :: Parser MessageTarget
