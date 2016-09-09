@@ -53,7 +53,7 @@ data InternalMessageBodySend
   -- | Join a new channel.
   | Join
     Channel -- ^ The channel to join
-  -- | A trivial message sen
+  -- | A trivial message sent to indicate registration status.
   | RegistrationResult RegistrationStatus
   deriving (Eq, Show)
 
