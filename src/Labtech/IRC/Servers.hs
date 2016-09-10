@@ -5,7 +5,7 @@ import Labtech.IRC.Types
 import qualified Data.Map as M
 
 servers :: [ServerSpec]
-servers = [ labcodersSpec, freenodeSpec ]
+servers = [ labcodersSpec ]
 
 labcodersSpec :: ServerSpec
 labcodersSpec = ServerSpec
@@ -16,12 +16,7 @@ labcodersSpec = ServerSpec
   , serverPort = 6697
   , serverChannels = Channel <$> [ "#general" ]
   , serverReplication = M.fromList
-    [ ( Channel "#general"
-      , [ ReplicationTarget
-          (ServerName "freenode")
-          (ChannelTarget (Channel "#labcoders"))
-        ]
-      )
+    [ ( Channel "#general", [] )
     ]
   , serverWorkerName = ServerName "labcoders"
   , useSSL = True
