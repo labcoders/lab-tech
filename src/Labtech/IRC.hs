@@ -44,7 +44,7 @@ makeIrcEnv conn _ = do
       liftIO $ putStrLn $ "< " ++ line
       case parseMessage line of
         Left e -> do
-          putStr e
+          -- putStr e
           _next
         Right x -> pure x
 
