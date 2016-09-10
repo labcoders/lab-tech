@@ -1,7 +1,12 @@
+{-# LANGUAGE ViewPatterns #-}
+
 module Labtech.Command where
 
 import Labtech.Command.Types
 import Labtech.DB
+import Labtech.DB.Queries
+import Labtech.DB.Types
+import Labtech.FS ( saveLink )
 import Labtech.Help ( help )
 import Labtech.IRC.Types
 import Labtech.Types
@@ -121,8 +126,14 @@ parseCommand env
     listCommand = do
       commandName "list" *> skipSome spaceChar *> (List <$> listTarget) <* eof
 
-handleCommand :: MonadLabIrcIO m => CommandEnv Command -> m ()
-handleCommand (CommandEnv
+handleCommand
+  :: MonadLabIrcIO m
+  => ConnectionPool
+  -> CommandEnv Command
+  -> m ()
+handleCommand
+  pool
+  (CommandEnv
   { commandBody = command
   , commandTarget = target
   , commandSender = nick
@@ -133,29 +144,29 @@ handleCommand (CommandEnv
       f <- liftIO $ case s of
             ListIdeas -> do
               putStrLn "listing ideas"
-              map formatIdea <$> listIdeas
+              map formatIdea <$> runDB pool listIdeas
             ListUploads -> do
               putStrLn "listing uploads"
-              map formatEntry <$> queryUploads
+              map formatEntry <$> runDB pool queryUploads
       if null f
       then ircPrivmsg target $ "No " ++ renderListTarget s
       else mapM_ (ircPrivmsg target) f
 
-    Delete l i -> do
-        b <- liftIO $ deleteFrom l i
+    Delete (deleteQueryFor -> l) i -> do
+        b <- liftIO $ runDB pool $ deleteFrom l i
         ircPrivmsg target b
 
     Idea i -> do
-        hasIdea <- liftIO $ ideaTableContains i
+        hasIdea <- liftIO $ runDB pool $ ideaTableContains i
         if hasIdea then
             ircPrivmsg target $
             "Idea already exists in database."
         else do
-            res <- liftIO $ insertIdea i nick
+            res <- liftIO $ runDB pool $ insertIdea i nick
             ircPrivmsg target res
     Upload url title -> do
-        hasUrl <- liftIO $ uploadTableContains url
-        hasTitle <- liftIO $ uploadTableContains title
+        hasUrl <- liftIO $ runDB pool $ uploadTableContains url
+        hasTitle <- liftIO $ runDB pool $ uploadTableContains title
         if hasUrl then
             ircPrivmsg target $
             "Url: " ++ url ++ " already exists in database."
@@ -166,7 +177,7 @@ handleCommand (CommandEnv
             fp <- liftIO $ saveLink url title
             case fp of
                 Just f  -> do
-                    res <- liftIO $ insertUpload url title f nick
+                    res <- liftIO $ runDB pool $ insertUpload url title f nick
                     ircPrivmsg target res
                 Nothing -> ircPrivmsg target $ "Could not save \""
                            ++ title ++ "\" (" ++ url ++ ")"

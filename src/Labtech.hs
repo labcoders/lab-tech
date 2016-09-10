@@ -5,6 +5,7 @@ module Labtech where
 import Labtech.Async
 import Labtech.Command
 import Labtech.Command.Types
+import Labtech.DB.Types
 import qualified Labtech.InternalMessaging.Types as IM
 import Labtech.IRC
 import Labtech.IRC.Types
@@ -56,6 +57,7 @@ runOnServer chan spec = void $ restarting (unregister chan spec) $ do
         error "TODO: throw exception"
 
   msgChan <- takeMVar mmsgChan
+  pool <- makeConnectionPool defaultConnectionPoolSize labtechConnInfo
 
   ircBotT <- async $ runLabtech spec ircEnv simpleLabEnv $ do
     -- do the IRC login and begin the main loop
@@ -63,12 +65,12 @@ runOnServer chan spec = void $ restarting (unregister chan spec) $ do
     ircUser (serverUsername spec) (serverRealName spec)
     liftIO $ threadDelay 3000000
     ircNick (head $ serverNicks spec)
-    handleMessage msgChan spec =<< ircNext
+    handleMessage pool msgChan spec =<< ircNext
     liftIO $ threadDelay 3000000
     forM_ (serverChannels spec) $ \c -> do
       ircJoin c
       liftIO $ threadDelay 1000000
-    mainLoop msgChan spec
+    mainLoop pool msgChan spec
 
   waitBoth serverMsgT ircBotT
 
@@ -83,16 +85,21 @@ toConnParams spec
 
 type CommandResponse = [String]
 
-mainLoop :: Chan IM.InternalMessageWS -> ServerSpec -> Labtech a
-mainLoop chan spec = forever $ handleMessage chan spec =<< ircNext
+mainLoop
+  :: ConnectionPool
+  -> Chan IM.InternalMessageWS
+  -> ServerSpec
+  -> Labtech a
+mainLoop pool chan spec = forever $ handleMessage pool chan spec =<< ircNext
 
 handleMessage
   :: MonadLabIrcIO m
-  => Chan IM.InternalMessageWS
+  => ConnectionPool
+  -> Chan IM.InternalMessageWS
   -> ServerSpec
   -> Message
   -> m ()
-handleMessage chan spec message = case message of
+handleMessage pool chan spec message = case message of
   NickInUse -> labRenick
   Pingmsg ping -> ircPong ping
   Privmsg origin target (init -> body) -> do
@@ -108,7 +115,7 @@ handleMessage chan spec message = case message of
               }
       case parseCommand env of
         Left err -> mapM_ (ircPrivmsg target) (lines err)
-        Right command -> handleCommand env { commandBody = command }
+        Right command -> handleCommand pool env { commandBody = command }
 
     liftIO $ replicateMessage spec origin target chan body
 

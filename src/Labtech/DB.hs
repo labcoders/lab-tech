@@ -1,166 +1,117 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Labtech.DB where
 
 import Control.Exception
+import Control.Monad.IO.Class
 
 import Data.Int
-import Data.UID
+import Data.String
 
 import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.ToField
 
-import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 
 import Labtech.Types
-import Labtech.Command.Types
+import Labtech.DB.Pagination
+import Labtech.DB.Queries
 import Labtech.DB.Types
 import Labtech.IRC.Types
 
-import Network.HTTP
+defaultPageSize :: PageSize
+defaultPageSize = 5
 
-import System.Directory
-import System.FilePath.Posix
+formatIdea :: IdeaEntry -> String
+formatIdea (IdeaEntry { ideaKey = key , ideaText = txt })
+  = show key ++ ". " ++ txt
 
-uploadFilePath :: FilePath
-uploadFilePath = "data"
-
-labtechConnInfo :: ConnectInfo
-labtechConnInfo = defaultConnectInfo
-                { connectUser = "labtech"
-                , connectDatabase = "labtech"
-                }
-
-formatIdea :: Idea -> String
-formatIdea (Idea
-               { ideaKey = key
-               , ideaText = txt
-               })
-               = "(" ++ (show key) ++ ") - " ++ txt
-
+-- | Pretty-print a format entry.
 formatEntry :: UploadEntry -> String
-formatEntry (UploadEntry
-               { uploadKey = key
-               , uploadUrl = url
-               , uploadTitle = title
-               , uploadNick = nick
-               })
-               = "(" ++ (show key) ++ ") - " ++ title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
+formatEntry
+  (UploadEntry
+    { uploadKey = key
+    , uploadUrl = url
+    , uploadTitle = title
+    , uploadNick = nick
+    })
+  = "(" ++ (show key) ++ ") - " ++ title ++ " (" ++ url ++ ") - uploaded by " ++ (unNick nick)
 
-uploadSelectAllStr :: Query
-uploadSelectAllStr
-  = "SELECT id, url, title, filepath, uploadtime, nick FROM uploads"
+insertIdea :: String -> Nick-> DB String
+insertIdea idea nick = withConnection $ \conn -> do
+  r <- liftIO $ try $ execute conn ideaInsertStr (Only idea)
+  case r of
+    Left ex -> pure $
+      "Failed to upload idea\"" ++ idea ++ " from " ++ (unNick nick) ++
+      ". Exception was: " ++ (displayException (ex :: SqlError))
+    Right _ -> pure $ "Got it, " ++ unNick nick ++ "."
 
-uploadSelectStr :: Query
-uploadSelectStr = "select id, url, title, filepath, uploadtime, nick from uploads where title = ?"
+-- | Counts the rows in the given column.
+--
+-- /Warning:/ this constructs a SQL query by splicing strings!
+countRows :: String -> DB (Either SqlError Int)
+countRows col = withConnection $ \conn -> do
+  let q = fromString $ "SELECT COUNT(1) FROM " ++ col
+  res <- liftIO $ try (query_ conn q)
+  pure $ (fromOnly . head <$> res)
 
-uploadInsertStr :: Query
-uploadInsertStr = "insert into uploads (url, title, filepath, uploadtime, nick) values (?, ?, ?, DEFAULT, ?)"
+paginateListUploads :: PageSpec -> DB (Either SqlError (Page UploadEntry))
+paginateListUploads info = withConnection $ \conn -> do
+  let q = unPaginatedListQuery paginatedListUploadsQuery
+  res <- liftIO $ try $ query conn q (pageInfoParams info)
+  rowsE <- countRows "uploads"
+  pure $ do
+    items <- res
+    rows <- rowsE
+    pure Page
+      { pageSpec = info
+      , pageCount = rows
+      , pageData = items
+      }
 
-uploadContainsStr :: Query
-uploadContainsStr = "select id, url, title, filepath, uploadtime, nick from uploads where ? = ?"
+-- | Delete a datum by ID using the given query.
+deleteFrom :: DeleteQuery -> Int -> DB String
+deleteFrom (DeleteQuery q) i = withConnection $ \conn -> do
+  res <- liftIO $ try $ execute conn q $ Only i :: DB (Either SqlError Int64)
+  case res of
+    Left ex ->
+      pure $ "Failed to delete. Exception was: " ++ displayException ex
+    Right _ -> pure "Done"
 
-ideaSelectAllStr :: Query
-ideaSelectAllStr = "SELECT id, idea FROM ideas"
+ideaTableContains :: String -> DB Bool
+ideaTableContains s = withConnection $ \conn -> do
+  is <- liftIO $ query conn ideaContainsStr (Only s) :: DB [UploadEntry]
+  pure $ length is /= 0
 
-ideaContainsStr :: Query
-ideaContainsStr = "select idea from ideas where idea = ?"
+uploadTableContains :: String -> DB Bool
+uploadTableContains s = withConnection $ \conn -> do
+  urls <- liftIO $ query conn uploadContainsStr (toField ("url" :: String), toField s) :: DB [UploadEntry]
+  tits <- liftIO $ query conn uploadContainsStr (toField ("title" :: String), toField s) :: DB [UploadEntry]
+  pure $ length urls /= 0 || length tits /= 0
 
-ideaInsertStr :: Query
-ideaInsertStr = "insert into ideas (idea) values (?)"
+queryUploads :: DB [UploadEntry]
+queryUploads = withConnection $ \conn -> liftIO $ query_ conn uploadSelectAllStr
 
-deleteUploadsQuery :: Query
-deleteUploadsQuery = "delete from uploads where id = ?"
+listIdeas :: DB [IdeaEntry]
+listIdeas = withConnection $ \conn -> liftIO $ query_ conn ideaSelectAllStr
 
-deleteIdeasQuery :: Query
-deleteIdeasQuery = "delete from ideas where id = ?"
+getUpload :: String -> DB (Maybe String)
+getUpload s = withConnection $ \conn -> do
+  items <- liftIO $ query conn uploadSelectStr (Only (s :: String))
+  case items of
+    [] -> pure Nothing
+    (x:_) -> pure (Just x)
 
--- We have really bad UIDs because i'm quite tired.
-saveLink :: Url -> Title -> IO (Maybe FilePath)
-saveLink url _ = do
-    result <- simpleHTTP $ getRequest url
-    case result of
-        Left _ -> return Nothing
-        Right rp -> do
-            fn <- getUniqueName
-            B.writeFile (uploadFilePath </> fn) $ C.pack $ rspBody rp
-            return $ Just (uploadFilePath </> fn)
-
-insertIdea :: String -> Nick-> IO String
-insertIdea idea nick = do
-    conn <- connect labtechConnInfo
-    r <- (try $ execute conn ideaInsertStr (Only idea)) :: IO (Either SqlError Int64)
-    case r of
-            Left ex -> return $ "Failed to upload idea\"" ++
-                                idea ++ " from " ++ (unNick nick) ++
-                                ". Exception was: " ++
-                                (displayException ex)
-            Right _ -> return $ "Got it, " ++ unNick nick ++ "."
-
-deleteFrom :: ListTarget -> Int -> IO String
-deleteFrom t i = do
-    conn <- connect labtechConnInfo
-    res  <- case t of
-        ListUploads ->
-            (try $
-            execute conn deleteUploadsQuery $ Only i) :: IO (Either SqlError Int64)
-        ListIdeas ->
-            (try $
-            execute conn deleteIdeasQuery $ Only i) :: IO (Either SqlError Int64)
-    case res of
-        Left ex -> return $ "Failed to delete. Exception was: " ++
-                    displayException ex
-        Right _ -> return "Done"
-
-ideaTableContains :: String -> IO Bool
-ideaTableContains s = do
-    conn <- connect labtechConnInfo
-    is <- query conn ideaContainsStr (Only s) :: IO [UploadEntry]
-    return $ length is /= 0
-
-uploadTableContains :: String -> IO Bool
-uploadTableContains s = do
-    conn <- connect labtechConnInfo
-    urls <- query conn uploadContainsStr (toField ("url" :: String), toField s) :: IO [UploadEntry]
-    tits <- query conn uploadContainsStr (toField ("title" :: String), toField s) :: IO [UploadEntry]
-    return (length urls /= 0 || length tits /= 0)
-
-getUniqueName :: IO String
-getUniqueName = do
-    cts <- listDirectory uploadFilePath
-    uid <- newUIDString
-    if elem uid cts then getUniqueName
-    else return uid
-
-queryUploads :: IO [UploadEntry]
-queryUploads = do
-    conn <- connect labtechConnInfo
-    query_ conn uploadSelectAllStr
-
-getUpload :: String -> IO (Maybe String)
-getUpload s = do
-    conn <- connect labtechConnInfo
-    items <- query conn uploadSelectStr (Only (s :: String))
-    case items of
-        [] -> return $ Nothing
-        (x:_) -> return $ Just x
-
-listIdeas :: IO [Idea]
-listIdeas = do
-    conn <- connect labtechConnInfo
-    query_ conn ideaSelectAllStr
-
-insertUpload :: Url -> Title -> FilePath -> Nick -> IO String
-insertUpload url tit fp nick = do
-    conn <- connect labtechConnInfo
-    print =<< formatQuery conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)
-    r <- (try $ execute conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)) :: IO (Either SqlError Int64)
-    case r of
-        Left ex -> return $ "Failed to upload \"" ++
-                            tit ++ "\" (" ++ url ++ ") from " ++
-                            (unNick nick) ++ ". Exception was: " ++
-                            (displayException ex)
-        Right _ -> return $ "Successfully uploaded \"" ++
-                            tit ++ "\" (" ++ url ++ ") from " ++
-                            (unNick nick)
+insertUpload :: Url -> Title -> FilePath -> Nick -> DB String
+insertUpload url tit fp nick = withConnection $ \conn -> do
+  q <- liftIO $ formatQuery conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)
+  liftIO $ print q
+  r <- (liftIO $ try $ execute conn uploadInsertStr ((C.pack url :: C.ByteString), tit :: String, (C.pack fp :: C.ByteString), (unNick nick) :: String)) :: DB (Either SqlError Int64)
+  case r of
+    Left ex -> pure $
+      "Failed to upload \"" ++ tit ++ "\" (" ++ url ++ ") from " ++
+      unNick nick ++ ". Exception was: " ++ displayException ex
+    Right _ -> pure $
+      "Successfully uploaded \"" ++ tit ++ "\" (" ++ url ++ ") from " ++
+      unNick nick
