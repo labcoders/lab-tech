@@ -14,7 +14,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Labtech.Web.Github
@@ -24,29 +23,74 @@ module Labtech.Web.Github
 
 import Control.Monad.IO.Class ( liftIO )
 import qualified Data.ByteString as BS
-import Data.Kind
+import Data.ByteString.Lazy ( fromStrict, toStrict )
+import qualified Data.ByteString.Base16 as B16
+import Data.HMAC ( hmac_sha1 )
+import Data.Maybe ( fromMaybe )
 import Data.Proxy
+import Data.String.Conversions ( cs )
+import qualified Data.Text.Encoding as E
 import GHC.TypeLits
 import GitHub.Data.Webhooks
-import Network.Wai ( requestHeaders )
+import Network.HTTP.Types hiding (Header, ResponseHeaders)
+import Network.Wai ( requestHeaders, strictRequestBody )
 import Servant
+import Servant.API.ContentTypes ( AllCTUnrender(..) )
 import Servant.Server.Internal
 
-data XGithubSignature (key :: Symbol)
+data GithubSignedReqBody (list :: [*]) (result :: *)
 
-instance forall sublayout context key.
-  (HasServer sublayout context, KnownSymbol key)
-  => HasServer (XGithubSignature key :> sublayout) context where
+newtype GithubKey = GithubKey { unGithubKey :: IO BS.ByteString }
 
-  type ServerT (XGithubSignature key :> sublayout) m
-    = () -> ServerT sublayout m
+instance forall sublayout context list result.
+  ( HasServer sublayout context
+  , HasContextEntry context GithubKey
+  , AllCTUnrender list result
+  )
+  => HasServer (GithubSignedReqBody list result :> sublayout) context where
+
+  type ServerT (GithubSignedReqBody list result :> sublayout) m
+    = result -> ServerT sublayout m
 
   route
-    :: forall env. Proxy (XGithubSignature key :> sublayout)
+    :: forall env. Proxy (GithubSignedReqBody list result :> sublayout)
     -> Context context
-    -> Delayed env (() -> Server sublayout)
+    -> Delayed env (result -> Server sublayout)
     -> Router env
-  route = undefined
+  route _ context subserver
+    = route (Proxy :: Proxy sublayout) context (addBodyCheck subserver go)
+    where
+      lookupSig = lookup "X-Hub-Signature"
+
+      go :: DelayedIO result
+      go = withRequest $ \req -> do
+        let hdrs = requestHeaders req
+        key <- BS.unpack <$> liftIO (unGithubKey $ getContextEntry context)
+        msg <- BS.unpack <$> liftIO (toStrict <$> strictRequestBody req)
+        let sig = B16.encode $ BS.pack $ hmac_sha1 key msg
+        let contentTypeH = fromMaybe "application/octet-stream"
+                         $ lookup hContentType $ hdrs
+        let mrqbody =
+              handleCTypeH (Proxy :: Proxy list) (cs contentTypeH) $
+              fromStrict (BS.pack msg)
+
+        case mrqbody of
+          Nothing        -> delayedFailFatal err415
+          Just (Left e)  -> delayedFailFatal err400 { errBody = cs e }
+          Just (Right v) -> case parseHeaderMaybe =<< lookupSig hdrs of
+            Nothing -> do
+              liftIO $ putStrLn "no X-Hub-Signature"
+              delayedFailFatal err401
+            Just h -> do
+              let h' = BS.drop 5 $ E.encodeUtf8 h -- remove "sha1=" prefix
+              if h' == sig
+              then pure v
+              else do
+                liftIO $ putStrLn $ concat
+                  [ "computed signature ", show sig, "doesn't match given "
+                  , "signature ", show h'
+                  ]
+                delayedFailFatal err401
 
 data XGithubEvent (event :: RepoWebhookEvent)
 
@@ -88,14 +132,7 @@ instance forall sublayout context event.
                    ]
                  delayedFail err400
 
-      parseHeaderMaybe :: FromHttpApiData a => BS.ByteString -> Maybe a
-      parseHeaderMaybe = eitherMaybe . parseHeader where
-        eitherMaybe :: Either e a -> Maybe a
-        eitherMaybe e = case e of
-          Left _ -> Nothing
-          Right x -> Just x
-
-type family Demote' (kparam :: KProxy k) :: Type
+type family Demote' (kparam :: KProxy k) :: *
 type Demote (a :: k) = Demote'('KProxy :: KProxy k)
 
 type instance Demote' ('KProxy :: KProxy Symbol) = String
@@ -176,3 +213,10 @@ instance Reflect 'WebhookTeamAddEvent where
 
 instance Reflect 'WebhookWatchEvent where
   reflect _ = WebhookWatchEvent
+
+parseHeaderMaybe :: FromHttpApiData a => BS.ByteString -> Maybe a
+parseHeaderMaybe = eitherMaybe . parseHeader where
+  eitherMaybe :: Either e a -> Maybe a
+  eitherMaybe e = case e of
+    Left _ -> Nothing
+    Right x -> Just x

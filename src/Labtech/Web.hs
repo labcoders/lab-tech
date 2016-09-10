@@ -46,5 +46,5 @@ pushEvent _ _ = do
 type LabtechAPI
   = "github"
     :> XGithubEvent 'WebhookPushEvent
-    :> ReqBody '[JSON] Object
+    :> GithubSignedReqBody '[JSON] Object
     :> Post '[JSON] ()
