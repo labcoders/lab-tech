@@ -12,26 +12,32 @@ import Labtech.Web.Github
 import Control.Monad.IO.Class
 import Control.Concurrent.Chan
 import Data.Aeson ( Object )
+import qualified Data.ByteString as BS
 import qualified Data.Text as T
 import Network.Wai ( Application )
 import Network.Wai.Handler.Warp ( run )
 import Servant
 
-
 -- | Entry point for the built-in web server.
 main :: Chan IM.WorkerRegistration -> IO ()
 main _ = do
   putStrLn "Starting built-in webserver."
-  run 13337 app -- TODO register web server with chan
+  key <- BS.init <$> BS.readFile "hook-secret" -- init to remove newline
+  putStrLn $ "loaded key " ++ show key
+  run 13337 (app (GithubKey $ pure key)) -- TODO register web server with chan
 
-app :: Application
-app = serve (Proxy :: Proxy LabtechAPI) labtechServer
+app :: GithubKey -> Application
+app key
+  = serveWithContext
+    (Proxy :: Proxy LabtechAPI)
+    (key :. EmptyContext)
+    labtechServer
 
 labtechServer :: Server LabtechAPI
 labtechServer = pushEvent
 
 pushEvent :: RepoWebhookEvent -> Object -> Handler ()
-pushEvent _ obj = do
+pushEvent _ _ = do
   liftIO $ do
     putStrLn "got push!"
 

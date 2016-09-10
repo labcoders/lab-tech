@@ -43,7 +43,7 @@ makeIrcEnv conn _ = do
       line <- ircGetLine conn
       liftIO $ putStrLn $ "< " ++ line
       case parseMessage line of
-        Left e -> do
+        Left _ -> do
           -- putStr e
           _next
         Right x -> pure x
