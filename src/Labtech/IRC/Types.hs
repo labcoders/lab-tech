@@ -3,7 +3,6 @@
 module Labtech.IRC.Types where
 
 import Control.Monad
-import Control.Monad.Reader
 
 import qualified Data.Map as M
 import qualified Data.ByteString.Char8 as B
